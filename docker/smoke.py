@@ -68,11 +68,11 @@ def check(condition, text):
     say(f'    ok: {text}')
 
 
-def docker(*args, env=None, ok=True, timeout=300):
+def docker(*args, env=None, ok=True, timeout=300, body=None):
     """Run docker. Returns (exit status, stdout + stderr). `env` adds variables to docker's own environment."""
     say('    $ docker ' + ' '.join(args))
     try:
-        done = subprocess.run(['docker', *args], env={**os.environ, **(env or {})}, text=True, errors='replace',
+        done = subprocess.run(['docker', *args], input=body, env={**os.environ, **(env or {})}, text=True, errors='replace',
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
     except subprocess.TimeoutExpired as error:
         raise Failure(f'docker {args[0]} did not finish within {timeout} seconds. Output so far:\n{error.stdout or ""}')
@@ -488,6 +488,32 @@ def config(image, tmp, run_id):
               'interrupted startup terminates without SIGKILL')
 
 
+def minio_bucket_credentials(minio, mc, run_id, bucket):
+    """Give each storage path a separate identity scoped to its synthetic bucket."""
+    access, password = bucket + run_id, secret(secrets.token_hex(24))
+    policy = {'Version': '2012-10-17', 'Statement': [
+        {'Effect': 'Allow', 'Action': ['s3:ListBucket', 's3:GetBucketLocation'],
+         'Resource': ['arn:aws:s3:::' + bucket]},
+        {'Effect': 'Allow', 'Action': ['s3:GetObject', 's3:PutObject', 's3:DeleteObject',
+                                     's3:AbortMultipartUpload', 's3:ListMultipartUploadParts'],
+         'Resource': ['arn:aws:s3:::' + bucket + '/*']},
+    ]}
+    docker('exec', '-i', '-e', 'MC_HOST_test', minio, 'mc', 'admin', 'policy', 'create',
+           'test', access, '/dev/stdin', env=mc, body=json.dumps(policy))
+    docker('exec', '-e', 'MC_HOST_test', '-e', 'BUCKET_ACCESS', '-e', 'BUCKET_PASSWORD',
+           minio, 'sh', '-c', 'mc admin user add test "$BUCKET_ACCESS" "$BUCKET_PASSWORD"',
+           env={**mc, 'BUCKET_ACCESS': access, 'BUCKET_PASSWORD': password})
+    docker('exec', '-e', 'MC_HOST_test', minio, 'mc', 'admin', 'policy', 'attach',
+           'test', access, '--user', access, env=mc)
+    scoped_mc = {'MC_HOST_scoped': secret(f'http://{access}:{password}@127.0.0.1:9000')}
+    docker('exec', '-e', 'MC_HOST_scoped', minio, 'mc', 'ls', 'scoped/' + bucket, env=scoped_mc)
+    other = 'replica' if bucket == 'files' else 'files'
+    status, _ = docker('exec', '-e', 'MC_HOST_scoped', minio, 'mc', 'ls', 'scoped/' + other,
+                       env=scoped_mc, ok=False)
+    check(status != 0, bucket + ' credentials cannot list the other storage bucket')
+    return access, password
+
+
 def minio_fixture(run_id):
     """Disposable private S3 buckets used only for synthetic container checks."""
     docker('build', '--file', str(ROOT / 'docker/minio.Dockerfile'), '--tag', MINIO_IMAGE,
@@ -509,13 +535,15 @@ def minio_fixture(run_id):
         time.sleep(1)
     else:
         raise Failure('synthetic MinIO fixture did not become ready')
+    access, password = minio_bucket_credentials(minio, mc, run_id, 'files')
+    replica_access, replica_password = minio_bucket_credentials(minio, mc, run_id, 'replica')
     return network, once_env({
         'WIKICONTEXT_S3_BUCKET': 'files', 'WIKICONTEXT_S3_ENDPOINT': f'http://{minio}:9000',
         'WIKICONTEXT_S3_REGION': 'us-east-1', 'WIKICONTEXT_S3_ACCESS_KEY_ID': access,
         'WIKICONTEXT_S3_SECRET_ACCESS_KEY': password, 'LITESTREAM_BUCKET': 'replica',
         'LITESTREAM_PATH': 'test/data', 'LITESTREAM_ENDPOINT': f'http://{minio}:9000',
-        'LITESTREAM_REGION': 'us-east-1', 'LITESTREAM_ACCESS_KEY_ID': access,
-        'LITESTREAM_SECRET_ACCESS_KEY': password})
+        'LITESTREAM_REGION': 'us-east-1', 'LITESTREAM_ACCESS_KEY_ID': replica_access,
+        'LITESTREAM_SECRET_ACCESS_KEY': replica_password})
 
 
 def initialize(image, volume, env, network):

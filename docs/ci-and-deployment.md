@@ -74,3 +74,8 @@ actionlint .github/workflows/image.yml .github/workflows/test.yml
 Base images are pulled from Docker Hub by digest, as upstream does. The
 VaultContext demo additionally mirrors its bases into its own GHCR namespace;
 adopting that here is optional and would need its own `mirror-bases.yml`.
+
+
+The application gate also copies the released demo launcher outside the checkout
+and exercises its published package with a fresh uv cache, both normally and
+with tracing. Source-package checks do not substitute for this release check.

@@ -20,7 +20,9 @@ try:
   if status==0:break
   time.sleep(1)
  else:raise RuntimeError('MinIO fixture failed')
- env=s.once_env({'WIKICONTEXT_S3_BUCKET':'files','WIKICONTEXT_S3_ENDPOINT':f'http://{minio}:9000','WIKICONTEXT_S3_REGION':'us-east-1','WIKICONTEXT_S3_ACCESS_KEY_ID':access,'WIKICONTEXT_S3_SECRET_ACCESS_KEY':secret,'LITESTREAM_BUCKET':'replica','LITESTREAM_PATH':'test/data','LITESTREAM_ENDPOINT':f'http://{minio}:9000','LITESTREAM_REGION':'us-east-1','LITESTREAM_ACCESS_KEY_ID':access,'LITESTREAM_SECRET_ACCESS_KEY':secret,'LITESTREAM_SYNC_INTERVAL':'1h'})
+ access,secret=s.minio_bucket_credentials(minio,mc,run_id,'files')
+ replica_access,replica_secret=s.minio_bucket_credentials(minio,mc,run_id,'replica')
+ env=s.once_env({'WIKICONTEXT_S3_BUCKET':'files','WIKICONTEXT_S3_ENDPOINT':f'http://{minio}:9000','WIKICONTEXT_S3_REGION':'us-east-1','WIKICONTEXT_S3_ACCESS_KEY_ID':access,'WIKICONTEXT_S3_SECRET_ACCESS_KEY':secret,'LITESTREAM_BUCKET':'replica','LITESTREAM_PATH':'test/data','LITESTREAM_ENDPOINT':f'http://{minio}:9000','LITESTREAM_REGION':'us-east-1','LITESTREAM_ACCESS_KEY_ID':replica_access,'LITESTREAM_SECRET_ACCESS_KEY':replica_secret,'LITESTREAM_SYNC_INTERVAL':'1h'})
  # Calling the supervised child without its private control socket must not serve.
  probe=['run','--rm']
  for key in env: probe.extend(['-e',key])
@@ -50,9 +52,9 @@ try:
       'mkdir -p /storage/pb_data; exec litestream restore -config /etc/litestream.yml /storage/pb_data/data.db',env=env)
   # Read both stopped databases in the image's SQLite runtime, with no raw data output.
   s.docker('run','--rm','-v',f'{first}:/source:ro','-v',f'{second}:/restored:ro',
-      '-v',str(root/'tests')+':/tests:ro','--entrypoint','sh',args.image,'-c',
+      '-v',str(root/'tests')+':/app/tests:ro','--entrypoint','sh',args.image,'-c',
       'cp -a /source/pb_data /tmp/source; cp -a /restored/pb_data /tmp/restored; '
-      'exec python3 /tests/object_storage_recovery.py --verify-source /tmp/source/data.db --verify-restored /tmp/restored/data.db')
+      'exec python3 /app/tests/object_storage_recovery.py --verify-source /tmp/source/data.db --verify-restored /tmp/restored/data.db')
   s.check(True,'entire recovered database equals stopped source before volume destruction')
   s.docker('rm',first);s.docker('volume','rm',first);s.volumes.remove(first)
   # Leave the comparison restore untouched: default startup must itself recover an empty volume.

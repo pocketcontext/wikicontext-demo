@@ -94,6 +94,13 @@ jobs:
         run: python3 wikicontext/tests/skill.py --binary pocketcontext/bin/pocketcontext
       - name: Test instrumented uploads and commands
         run: python3 wikicontext/tests/skill.py --binary pocketcontext/bin/pocketcontext --trace
+      - name: Test copied published demo launcher
+        run: |
+          cp wikicontext/skills/wikicontext/wikicontext "$RUNNER_TEMP/wikicontext-released"
+          chmod +x "$RUNNER_TEMP/wikicontext-released"
+          export UV_CACHE_DIR="$RUNNER_TEMP/wikicontext-released-cache"
+          python3 wikicontext/tests/skill.py --binary pocketcontext/bin/pocketcontext --client "$RUNNER_TEMP/wikicontext-released"
+          python3 wikicontext/tests/skill.py --binary pocketcontext/bin/pocketcontext --client "$RUNNER_TEMP/wikicontext-released" --trace
       - name: Test access, publication and evidence workflows
         run: |
           python3 wikicontext/tests/auth.py --binary pocketcontext/bin/pocketcontext

@@ -11,6 +11,21 @@ Resolve `wikicontext` relative to this skill directory. The portable client requ
 
 The executable `wikicontext` beside this file is a standalone uv launcher. Install uv and Python 3.11+, then resolve this launcher to an absolute path or add its directory to PATH. The first invocation downloads the pinned package and dependencies. Use the full command name in all examples.
 
+## Public disposable demo
+
+This skill's launcher pins the dedicated `pocketcontext/wikicontext-demo` client.
+For the public demo, enroll in the browser with the same verified Google account
+before using the CLI. Accept the current daily terms there; CLI installation or
+Google login alone does not enroll you. Demo accounts and wiki content reset at
+00:00 UTC. Use synthetic, non-sensitive documents only. Contact preferences have
+separate retention as described by the demo privacy page.
+
+The demo permits personal spaces only and rejects audio/video sources and
+transcription. Do not invoke Groq or the audio workflows below for demo work.
+Those inherited workflows apply only to separately authorized non-demo servers.
+Use the browser's current usage/limit display; quota failures do not authorize
+bypassing limits. After a reset, sign in and enroll again before resuming.
+
 ## Identity and safety
 
 Use the existing default `users` identity. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`, then use `wikicontext login --google` or `WIKICONTEXT_USER_PASSWORD`. Ask for missing configuration; never search unrelated files for secrets. Use ordinary user credentials, never superuser credentials for knowledge work. Immutable records are edited by publishing new revisions.

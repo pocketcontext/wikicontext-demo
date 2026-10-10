@@ -201,6 +201,9 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn('ubuntu-24.04-arm', application)
         self.assertIn('python3 wikicontext/tests/spaces.py --binary pocketcontext/bin/pocketcontext', application)
         self.assertIn('python3 wikicontext/tests/demo_website.py --binary pocketcontext/bin/pocketcontext', application)
+        self.assertIn('cp wikicontext/skills/wikicontext/wikicontext "$RUNNER_TEMP/wikicontext-released"', application)
+        self.assertIn('--client "$RUNNER_TEMP/wikicontext-released" --trace', application)
+        self.assertIn('export UV_CACHE_DIR="$RUNNER_TEMP/wikicontext-released-cache"', application)
         check = PUBLICATION.split('  check:', 1)[1].split('  tests:', 1)[0]
         self.assertIn('runner: ubuntu-24.04-arm', check)
         self.assertIn('runner: ubuntu-24.04', check)

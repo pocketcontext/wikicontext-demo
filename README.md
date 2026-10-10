@@ -99,9 +99,11 @@ Do not commit `ui/dist` or browser test output.
 The standalone launcher `skills/wikicontext/wikicontext` requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Add its directory to `PATH` to use the commands below. Its first run installs the client from a pinned Git revision. For development and validation, install the current package in a virtual environment with `python3 -m pip install .`. Release the tested package commit first, then update the launcher to that full commit and verify the copied launcher through uv. The package pins its ObserveContext instrumentation dependency separately.
 
 
-After the demo client is published, install with `npx skills add pocketcontext/wikicontext-demo --skill wikicontext`, or copy `skills/wikicontext/` to your agent's skill directory. It works outside this repository. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`; use Google login for public demo accounts. Existing passwords are supported only outside demo mode. Commands operate in the selected space: `--space ID`, else `WIKICONTEXT_SPACE`, else your personal space; `wikicontext spaces` lists memberships.
+Install with `npx skills add pocketcontext/wikicontext-demo --skill wikicontext`, or copy `skills/wikicontext/` to your agent's skill directory. It works outside this repository. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`; use Google login for public demo accounts. Existing passwords are supported only outside demo mode. Commands operate in the selected space: `--space ID`, else `WIKICONTEXT_SPACE`, else your personal space; `wikicontext spaces` lists memberships.
 
-The launcher still pins the upstream `pocketcontext/wikicontext` client commit, which predates spaces. Before release, publish the tested client from `pocketcontext/wikicontext-demo` and repoint the launcher's Git URL and full commit there (and the `npx skills add` source).
+The launcher pins the published `pocketcontext/wikicontext-demo` client at
+`ca78b763de03f25c0f9b8bb8fb232cb3657b0020`, including space-scoped commands.
+A published client does not mean the demo service has been deployed.
 
 ```sh
 wikicontext login --google

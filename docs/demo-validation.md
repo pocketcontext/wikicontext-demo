@@ -1,11 +1,14 @@
 # Demo validation status — 10 October 2026
 
 **Not deployed, not provider-verified.** This records local synthetic validation
-of the `wikicontext-demo` worktree captured by the commit containing this record. No GitHub repository or
-environment, image, OAuth client, DNS record, bucket, credential, host
-dispatcher or timer exists for this demo, and no live service was contacted.
+of the `wikicontext-demo` worktree captured by the commit containing this record.
+The public GitHub repository and main-only `wikicontext-demo` environment now exist.
+The initial package commit is `ca78b763de03f25c0f9b8bb8fb232cb3657b0020`;
+the portable launcher uses that dedicated repository and full revision.
+Image publication and deployment opt-ins remain unset. No demo cloud resources,
+host dispatcher or timer have been provisioned, and no live demo service was contacted.
 
-## Local checks run
+## Earlier local checks
 
 The earlier baseline checks used server
 `976ddf71a4734530adefe4a56633658a0894b449` before private-search configuration
@@ -87,9 +90,57 @@ and rollback. Internal source checksum saves remain uncounted.
 
 ## Not run
 
-- No Docker daemon is available on this host: the image build, `once_smoke.py`,
-  container config/smoke and MinIO recovery gates, and the AMD64 platform run
-  only in native CI.
+- The earlier checks predated Docker installation. Native Docker validation
+  is recorded separately below; the local host is ARM64.
 - Real Google sign-in, R2 whole-bucket purge behaviour, provider snapshot/version
   expiry, ONCE adoption, the host dispatcher, DNS/TLS and forwarded-header trust
   chain, and a real 00:00 UTC rollover remain unverified.
+
+## Publication and container continuation
+
+On 10 October 2026, the public repository was created and the prepared package
+was pushed. Its deployment environment permits the `main` branch only.
+The launcher now pins the published demo package instead of upstream;
+the installation-contract test requires a dedicated full revision rather than
+skipping an upstream pin. The portable skill explicitly requires browser
+enrollment and forbids demo audio/transcription workflows.
+
+Docker 29.9.0 was installed and its daemon verified with an unprivileged
+`ubuntu` hello-world container.
+
+All 28 README backend/client commands passed again against the reviewed server.
+An unchanged copy of the published launcher, run from an unrelated temporary
+directory with a fresh uv cache, passed help and the complete portable skill
+suite with and without tracing. The tests put the real uv executable on PATH:
+the asdf shim cannot operate after the fixture isolates HOME. CI now repeats
+both copied-launcher integration runs. The two installation-contract tests pass;
+a launcher pointing back to upstream is now a failure rather than a skip.
+
+The naming review confirmed the proposed `pocketdeploy-v1` profile/role names.
+Three naming tests passed, including ONCE runtime bindings; validators retain
+role separation and reject production names. The host/profile choice remains
+open, and names alone do not establish bucket-scoped credentials.
+
+Local native ARM64 Docker gates passed:
+
+- Image build, including reader typecheck, 80 unit tests and production assets.
+- Image-extracted server maintenance, demo backend and all 96 demo lifecycle
+  tests, using the packaged Litestream 0.5.17; no launcher skip remains.
+- `docker/once_smoke.py`, configuration smoke and standard application smoke.
+- `docker/object_storage_smoke.py`, including protected original access,
+  separate bucket-scoped credentials, strict database comparison before source
+  volume destruction, empty-volume recovery and missing/corrupt original refusal.
+
+The local image `wikicontext-demo:local` has image ID
+`sha256:e01cb0698f22f3615bb24dba7f95fcb70d71144cd26ca48c17f6227bfb85e463`.
+It was built from `ca78b76` plus the released-launcher update before the
+continuation commit; it is a validation image, not a published release artifact.
+The image contains the pinned server `dc1dc6b` and Litestream 0.5.17.
+Test containers, volumes and networks were removed after verification.
+
+Container checks exposed two inherited fixture defects: originals and replicas
+shared one credential, which the entrypoint correctly refused, and the recovery
+comparator mounted tests at a path without the application configuration.
+Fixtures now create separate bucket-scoped users, check cross-bucket denial,
+and mount recovery tests under `/app/tests`. No runtime protection was relaxed.
+Native AMD64 results and exact committed-source image results remain CI gates.

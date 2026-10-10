@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / 'deploy/demo'))
 import contact_replica
 import docker_lifecycle
 import reset
+import once_runtime
 
 CHOSEN = ('pocketdeploy-v1-wikicontext-demo-files', 'pocketdeploy-v1-wikicontext-demo-replica',
           'pocketdeploy-v1-wikicontext-demo-contacts-replica')
@@ -20,7 +21,7 @@ LEGACY = ('wikicontext-demo-files', 'wikicontext-demo-replicas', 'wikicontext-de
 
 
 class StorageNamesTests(unittest.TestCase):
-    def test_role_bound_docker_and_reset_names(self):
+    def test_role_bound_runtime_docker_and_reset_names(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'wikicontext-demo'
             root.mkdir(mode=0o700)
@@ -48,9 +49,11 @@ class StorageNamesTests(unittest.TestCase):
                     if valid:
                         docker_lifecycle.environment(env_file)
                         reset.configuration(config_file)
+                        once_runtime.validate_bindings(values)
                     else:
                         with self.assertRaises(reset.ResetError): docker_lifecycle.environment(env_file)
                         with self.assertRaises(reset.ResetError): reset.configuration(config_file)
+                        with self.assertRaises(once_runtime.RuntimeErrorSafe): once_runtime.validate_bindings(values)
 
     def test_contact_replica_accepts_only_contact_role(self):
         for name in (*CHOSEN, LEGACY[2], CHOSEN[2] + '-other', 'once-v2-wikicontext-demo-contacts-replica'):

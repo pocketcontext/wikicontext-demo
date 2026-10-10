@@ -1,6 +1,6 @@
 # Dedicated demo repository
 
-`pocketcontext/wikicontext-demo` (planned; not yet created on GitHub) owns the
+`pocketcontext/wikicontext-demo` owns the
 public disposable WikiContext demo, with `main` as its release branch. It was
 forked locally with the full history of `pocketcontext/wikicontext`; the local
 upstream remote is named `upstream-local`. The client command and skill remain
@@ -8,7 +8,7 @@ upstream remote is named `upstream-local`. The client command and skill remain
 
 The demo has independent CI, image publication (`ghcr.io/pocketcontext/wikicontext-demo`)
 and deployment controls (GitHub environment `wikicontext-demo`, restricted to
-`main`, with its own forced-command key). The skill installs from
+`main`; its forced-command deployment key is still pending). The skill installs from
 `https://github.com/pocketcontext/wikicontext-demo/tree/main/skills/wikicontext`.
 Core WikiContext production remains independently owned by `pocketcontext/wikicontext`
 and its `once-v2` deployment; this repository contains no path to it.
@@ -48,8 +48,10 @@ and vice versa, recording the source commit.
 
 ## Initial publication checklist (requires explicit authorization)
 
-1. Create the public repository and push `main`; keep the `upstream` remote for reviews.
-2. Configure the `wikicontext-demo` environment restricted to `main`; keep
+1. Completed 10 October 2026: created the public repository and pushed `main`;
+   local `upstream-local` remains available for upstream reviews.
+2. Completed 10 October 2026: configured the `wikicontext-demo` environment
+   restricted to the `main` branch. Keep
    `WIKICONTEXT_DEMO_PUBLISH` and `WIKICONTEXT_DEMO_DEPLOY_ENABLED` unset until
    native CI passes.
 3. Provision the OAuth client, DNS record, three buckets and three credentials;

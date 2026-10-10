@@ -46,10 +46,8 @@ for(const mode of ['valid','missing','oversized','unpinned','wrong-repository','
     def test_shipped_launcher_state_is_reported_not_assumed(self):
         # The demo advertises installation only after the launcher pins the dedicated repository.
         text = (ROOT / 'skills/wikicontext/wikicontext').read_text()
-        pinned = 'github.com/pocketcontext/wikicontext-demo.git' in text
-        if not pinned:
-            self.skipTest('skills/wikicontext/wikicontext still pins upstream; /api/demo/status reports clientReady=false')
-        self.assertEqual(json.dumps(text.count('wikicontext-client = {')), '1')
+        self.assertRegex(text, r'wikicontext-client = \{ git = "https://github\.com/pocketcontext/wikicontext-demo\.git", rev = "[a-f0-9]{40}" \}')
+        self.assertEqual(text.count('wikicontext-client = {'), 1)
 
 
 if __name__ == '__main__':

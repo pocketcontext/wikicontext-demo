@@ -4,9 +4,10 @@
 origin `https://wiki-demo.pocketcontext.com`, its Google OAuth client, DNS
 record, buckets (`pocketdeploy-v1-wikicontext-demo-files`,
 `pocketdeploy-v1-wikicontext-demo-replica`,
-`pocketdeploy-v1-wikicontext-demo-contacts-replica`), credentials, GitHub
-repository/environment `pocketcontext/wikicontext-demo` / `wikicontext-demo`,
-and host dispatcher are not provisioned. The host choice and capacity assessment
+`pocketdeploy-v1-wikicontext-demo-contacts-replica`), credentials and host
+dispatcher are not provisioned. The public GitHub repository
+`pocketcontext/wikicontext-demo` and its main-only `wikicontext-demo` environment
+were created on 10 October 2026; deployment and image-publication opt-ins remain unset. The host choice and capacity assessment
 remain open; these bucket names assume the proposed `pocketdeploy-v1` profile.
 Local validation evidence is in [docs/demo-validation.md](docs/demo-validation.md).
 
