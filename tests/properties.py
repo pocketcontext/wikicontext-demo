@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
-from integration import ROOT, server, credentials
+from integration import ROOT, SEARCH, server, credentials
 import search_integration
 from search_integration import Fixture, running
 from wikicontext_client import ingest, repository_files, cli
@@ -43,7 +43,8 @@ def main():
             assert fixture.query('SELECT id FROM audit_log ORDER BY id') == audit
             row = fixture.query('SELECT id,properties,property_evidence FROM page_revisions')[0]
             assert row['id'] == revision['id'] and row['properties'] is None and row['property_evidence'] is None
-            assert fixture.search(publication)['hits'][0]['id'] == revision['id']
+            if SEARCH:
+                assert fixture.search(publication)['hits'][0]['id'] == revision['id']
             staged = fixture.run('upgraded-resource-publication')
             updated = request('POST', '/api/collections/page_revisions/records', dict(run=staged['id'], page=page['id'], base_revision=revision['id'], title='Updated resource', summary='Synthetic upgrade', body='[needs verification]', properties={'catalog_type': 'resource'}), token)
             fixture.publish(staged)

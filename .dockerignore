@@ -16,3 +16,15 @@ ui/**
 !ui/vite.config.ts
 !ui/src/
 !ui/src/**
+
+# Demo runtime: supervisor, reset library, contact service, legal drafts and the
+# public launcher used only to identify the tested client revision.
+!legal/terms.html
+!legal/privacy.html
+!legal/legal.css
+!deploy/demo/retention.py
+!deploy/demo/contact_replica.py
+!deploy/demo/contact-litestream.yml
+!deploy/demo/once_runtime.py
+!deploy/demo/reset.py
+!skills/wikicontext/wikicontext

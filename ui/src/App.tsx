@@ -10,7 +10,10 @@ import PropertiesPanel from "./Properties";
 import "./catalog.css";
 import ImagePreview from "./ImagePreview";
 import EvidenceBrowser, { evidenceHref } from "./EvidenceBrowser";
-import { api, pb, sessionGeneration } from "./api";
+import { api, pb, selectSpace, sessionGeneration, type Space } from "./api";
+import DemoApp, { type DemoReaderContext } from "./DemoApp";
+import { fetchStatus, formatCountdown, secondsUntil, type StatusResult } from "./demo";
+import { useTheme } from "./theme";
 import SearchResults, { searchHref } from "./SearchResults";
 import { homePageSlug } from "./home";
 import WelcomePage from "./WelcomePage";
@@ -22,13 +25,6 @@ function safeDecode(value: string) {
     return decodeURIComponent(value);
   } catch {
     return value;
-  }
-}
-function savedTheme() {
-  try {
-    return localStorage.getItem("wiki-theme") || "dark";
-  } catch {
-    return "dark";
   }
 }
 function route() {
@@ -43,6 +39,7 @@ function route() {
     collection: path.startsWith("sources/") ? "sources" as const : path.startsWith("passages/") ? "passages" as const : "pages" as const,
     record: /^(sources|passages)\//.test(path) ? safeDecode(path.split("/")[1] || "") : "",
     publication: params.get("publication") || "",
+    space: /^[a-z0-9]{15}$/.test(params.get("space") || "") ? params.get("space")! : "",
     offset: Math.min(100000, Math.max(0, parseInt(params.get("offset") || "0", 10) || 0)),
     heading: params.get("heading") || "",
     query: params.get("q") || "",
@@ -54,16 +51,33 @@ function message(error: unknown) {
     : "Unable to load the wiki. Please try again.";
 }
 export default function App() {
+  // Demo mode is chosen only from a validated same-origin status response.
+  const [status, setStatus] = useState<StatusResult | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchStatus(controller.signal).then(setStatus).catch(() => {});
+    return () => controller.abort();
+  }, []);
+  if (!status) return <div className="boot" aria-busy="true"><span className="sr-only">Loading WikiContext…</span></div>;
+  if (status.kind === "standard") return <StandardApp />;
+  return <DemoApp initial={status} renderReader={(demo, key) => <Reader key={key} demo={demo} />} />;
+}
+function StandardApp() {
   const [session, setSession] = useState(sessionGeneration);
   useEffect(() => pb.authStore.onChange(() => setSession(sessionGeneration)), []);
   // Remount every private view when the identity changes, including child caches.
   return <Reader key={session} />;
 }
-function Reader() {
+function Reader({ demo }: { demo?: DemoReaderContext }) {
   const [authenticated, setAuthenticated] = useState(pb.authStore.isValid);
   const [current, setCurrent] = useState(route);
   const routeSelection = useRef(current);
   const [publications, setPublications] = useState<Publication[]>([]);
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [space, setSpace] = useState<Space | null>(null);
+  // The selected space persists across links that do not name one.
+  const selectedSpace = useRef("");
+  const [emptySpace, setEmptySpace] = useState(false);
   const [snapshot, setSnapshot] = useState<{
     publication: Publication;
     pages: PageSummary[];
@@ -84,7 +98,7 @@ function Reader() {
   const [menu, setMenu] = useState(false);
   const [evidenceTitle, setEvidenceTitle] = useState("");
   const [connected, setConnected] = useState(false);
-  const [theme, setTheme] = useState(savedTheme);
+  const [theme, setTheme] = useTheme();
   const generation = useRef(0);
   useEffect(() => () => { generation.current++; }, []);
   const historyOffset = useRef(0);
@@ -93,20 +107,12 @@ function Reader() {
   const citationClose = useRef<HTMLButtonElement>(null);
   const lastCitationFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem("wiki-theme", theme);
-    } catch {
-      /* Storage is optional. */
-    }
-  }, [theme]);
-  useEffect(() => {
     const handler = () => {
       const next = route();
       const previous = routeSelection.current;
       if (
         next.slug !== previous.slug || next.welcome !== previous.welcome || next.catalog !== previous.catalog ||
-        next.publication !== previous.publication
+        next.publication !== previous.publication || next.space !== previous.space
       ) {
         generation.current++;
       }
@@ -129,6 +135,9 @@ function Reader() {
           generation.current++;
           setSnapshot(null);
           setPublications([]);
+          setSpaces([]);
+          setSpace(null);
+          selectedSpace.current = "";
           setEvidence(null);
           setOriginal("");
           lastPublication.current = undefined;
@@ -172,7 +181,32 @@ function Reader() {
     setError("");
     try {
       await api.refreshSession();
-      const history = await api.listPublications();
+      const memberships = await api.listSpaces();
+      // A pinned publication link opens in its own space when it is a membership.
+      let pinned = current.publication ? await api.getPublication(current.publication) : null;
+      const chosen = selectSpace(memberships, pinned?.space || current.space || selectedSpace.current);
+      if (own === generation.current) {
+        setSpaces(memberships);
+        setSpace(chosen);
+        if (chosen && chosen.id !== selectedSpace.current) {
+          setSnapshot(null);
+          setEvidence(null);
+          setOriginal("");
+          lastPublication.current = undefined;
+          latestSeen.current = "";
+        }
+        if (chosen) selectedSpace.current = chosen.id;
+      }
+      if (!chosen) {
+        if (own === generation.current) {
+          setPublications([]);
+          setSnapshot(null);
+          setEmptySpace(true);
+        }
+        return;
+      }
+      if (pinned && pinned.space !== chosen.id) pinned = null;
+      const history = await api.listPublications(chosen.id);
       if (own === generation.current && history[0]) {
         if (latestSeen.current && latestSeen.current !== history[0].id)
           setSearchEpoch((n) => n + 1);
@@ -185,10 +219,9 @@ function Reader() {
       let publication = current.publication
         ? history.find((p) => p.id === current.publication)
         : history[0];
-      if (current.publication && !publication) {
-        publication =
-          (await api.getPublication(current.publication)) || undefined;
-        if (publication) history.push(publication);
+      if (current.publication && !publication && pinned) {
+        publication = pinned;
+        history.push(publication);
       }
       if (!publication) {
         if (current.publication)
@@ -198,6 +231,7 @@ function Reader() {
         if (own === generation.current) {
           setPublications(history);
           setSnapshot(null);
+          setEmptySpace(true);
         }
         return;
       }
@@ -206,6 +240,7 @@ function Reader() {
       const page = slug ? await api.getPage(publication.id, slug) : null;
       if (own === generation.current) {
         setPublications(history);
+        setEmptySpace(false);
         lastPublication.current = publication.id;
         setSnapshot({ publication, pages, page });
         setEvidence((previous) =>
@@ -215,11 +250,14 @@ function Reader() {
         );
       }
     } catch (e) {
-      if (own === generation.current) setError(message(e));
+      if (own === generation.current) {
+        setError(message(e)); setSnapshot(null); setEvidence(null); setOriginal("");
+        lastPublication.current = undefined;
+      }
     } finally {
       if (own === generation.current) setBusy(false);
     }
-  }, [current.slug, current.welcome, current.catalog, current.publication]);
+  }, [current.slug, current.welcome, current.catalog, current.publication, current.space]);
   useEffect(() => {
     if (!authenticated) return;
     void load();
@@ -352,7 +390,8 @@ function Reader() {
     [snapshot?.page],
   );
   const pinned = current.publication || undefined;
-  if (!authenticated) return <Login theme={theme} setTheme={setTheme} />;
+  // The demo shell owns sign-in; never offer password login there.
+  if (!authenticated) return demo ? null : <Login theme={theme} setTheme={setTheme} />;
   const page =
     (!current.publication ||
       snapshot?.publication.id === current.publication) &&
@@ -368,8 +407,9 @@ function Reader() {
     if (pinned) params.set("publication", pinned);
     return `#/welcome?${params}`;
   };
-  const welcoming = !current.catalog && current.collection === "pages" && !searching && !current.slug &&
+  const welcoming = !emptySpace && !current.catalog && current.collection === "pages" && !searching && !current.slug &&
     (current.welcome || (matchingPublication && !snapshot?.publication.home));
+  const showEmptySpace = emptySpace && !current.publication && current.collection === "pages";
   return (
     <div className="workspace">
       <a
@@ -392,9 +432,15 @@ function Reader() {
             WikiContext<small>YOUR CONNECTED KNOWLEDGE</small>
           </span>
         </a>
-        <div className="workspace-label">
-          <span className="workspace-dot" /> Shared workspace
-        </div>
+        {spaces.length > 1 ? (
+          <label className="publication-control space-control">Space<select aria-label="Space" value={space?.id || ""} onChange={e => { selectedSpace.current = e.target.value; location.hash = `#/?space=${encodeURIComponent(e.target.value)}`; }}>
+            {spaces.map(item => <option key={item.id} value={item.id}>{item.kind === "personal" ? "Personal space" : item.name}{item.role === "reader" ? " (read only)" : ""}</option>)}
+          </select></label>
+        ) : (
+          <div className="workspace-label">
+            <span className="workspace-dot" /> {space ? (space.kind === "personal" ? "Personal space" : space.name) : demo ? "Personal space" : "Your spaces"}
+          </div>
+        )}
         <a className={`welcome-nav ${welcoming ? "selected" : ""}`} href={`#/welcome${pinned ? `?publication=${encodeURIComponent(pinned)}` : ""}`} aria-current={welcoming ? "page" : undefined}>⌂ <span>Welcome</span></a>
         <label className="publication-control">Collection<select aria-label="Collection" value={current.collection} onChange={e => { location.hash = e.target.value === "pages" ? pageHref("", pinned) : evidenceHref(e.target.value as "sources" | "passages", "", "", current.publication); }}><option value="pages">Pages</option><option value="sources">Sources</option><option value="passages">Passages</option></select></label>
         <label className="search" hidden={welcoming}>
@@ -458,6 +504,7 @@ function Reader() {
           </details>
         </div>
         <div className="sidebar-bottom">
+          {demo && <DemoClock resetAt={demo.resetAt} />}
           <div className="connection">
             <span className={connected ? "live-dot" : "offline-dot"} />
             {pinned
@@ -496,7 +543,7 @@ function Reader() {
                 onChange={(e) => {
                   if (e.target.value === "more") {
                     void api
-                      .listPublications(historyOffset.current, 50)
+                      .listPublications(space?.id || "", historyOffset.current, 50)
                       .then((rows) => {
                         historyOffset.current += rows.length;
                         setMoreHistory(rows.length === 50);
@@ -523,6 +570,7 @@ function Reader() {
                 )}
               </select>
             </label>
+            {demo && <a className="demo-setup-link" href={demo.setupHref}>Demo setup</a>}
             <button
               className="icon-button"
               aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
@@ -554,7 +602,8 @@ function Reader() {
             tabIndex={-1}
             aria-busy={busy}
           >
-            {current.collection !== "pages" && <EvidenceBrowser collection={current.collection} id={current.record} term={current.query} publication={current.publication} offset={current.offset} navigation={evidenceNavigation} onTitleChange={setEvidenceTitle} />}
+            {showEmptySpace && <EmptySpace demo={demo} />}
+            {current.collection !== "pages" && space && <EvidenceBrowser key={space.id} space={space.id} collection={current.collection} id={current.record} term={current.query} publication={current.publication} offset={current.offset} navigation={evidenceNavigation} onTitleChange={setEvidenceTitle} />}
             <SearchResults
               publication={snapshot?.publication.id || lastPublication.current}
               query={current.query}
@@ -563,9 +612,9 @@ function Reader() {
               }
               epoch={searchEpoch}
             />
-            {current.catalog && matchingPublication && (!busy || snapshot) && <Catalog pages={pages} state={current.catalogState} publication={pinned} onNavigate={href => { history.replaceState(null, "", href); const next = route(); routeSelection.current = next; setCurrent(next); setSearch(next.query); }} />}
+            {current.catalog && !showEmptySpace && matchingPublication && (!busy || snapshot) && <Catalog pages={pages} state={current.catalogState} publication={pinned} onNavigate={href => { history.replaceState(null, "", href); const next = route(); routeSelection.current = next; setCurrent(next); setSearch(next.query); }} />}
             {welcoming && matchingPublication && (!busy || snapshot) && <WelcomePage key={pinned || "live"} pages={pages} publication={snapshot?.publication || null} pinned={pinned} topic={current.topic} onTopicChange={topic => { location.hash = welcomeHref(topic); }} onSearch={query => { location.hash = searchHref(query, pinned); }} />}
-            {current.collection === "pages" && !current.catalog && !searching && !welcoming &&
+            {current.collection === "pages" && !current.catalog && !searching && !welcoming && !showEmptySpace &&
               (page ? (
                 <article>
                   {current.query && current.slug && (
@@ -808,6 +857,43 @@ function Reader() {
         </div>
       )}
     </div>
+  );
+}
+function DemoClock({ resetAt }: { resetAt: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div className="demo-clock" role="timer" aria-label="Time until the daily demo reset">
+      Demo resets in <strong>{formatCountdown(secondsUntil(resetAt, now))}</strong>
+    </div>
+  );
+}
+function EmptySpace({ demo }: { demo?: DemoReaderContext }) {
+  return (
+    <section className="empty-state empty-space" aria-labelledby="empty-space-title">
+      <span className="empty-icon" aria-hidden="true">▤</span>
+      <h1 id="empty-space-title">Your wiki is empty — for now</h1>
+      <p>
+        Nothing has been published in this space yet. Pages appear here automatically when your coding agent
+        publishes them.
+      </p>
+      {demo && (
+        <>
+          <p>Ask your agent, for example:</p>
+          <blockquote className="agent-request">
+            Use the wikicontext skill to ingest ./notes.md into my WikiContext demo, write cited wiki pages
+            about it and publish them.
+          </blockquote>
+          <p className="empty-space-note">
+            Text, Markdown and PDF sources work; audio is unavailable. Wiki content and demo accounts reset at 00:00 UTC.
+          </p>
+          <a className="primary-button empty-space-action" href={demo.setupHref}>Set up your coding agent</a>
+        </>
+      )}
+    </section>
   );
 }
 function Login({

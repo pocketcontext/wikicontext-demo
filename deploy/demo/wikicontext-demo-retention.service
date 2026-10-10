@@ -1,0 +1,14 @@
+[Unit]
+Description=Expire nonmarketing demo contacts and report annual reviews
+
+[Service]
+Type=oneshot
+User=wikicontext-demo
+Group=wikicontext-demo
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/wikicontext-demo/deploy/demo/retention.py --database /var/lib/wikicontext-demo/persistent/contacts.db --maintenance
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/wikicontext-demo/persistent

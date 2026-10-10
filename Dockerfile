@@ -1,4 +1,6 @@
-# WikiContext image for Basecamp ONCE: HTTP on port 80, GET /up, all state under /storage.
+# WikiContext Demo image for Basecamp ONCE: HTTP on port 80, GET /up, SQLite under /storage; originals in private S3.
+# With WIKICONTEXT_DEMO_ONCE=true the image runs its own demo supervisor (deploy/demo/once_runtime.py):
+# private control socket, nginx ingress gate, one writer, three replicas and the 00:00 UTC reset.
 # Build context: this repository. See .dockerignore for the files that enter it.
 #
 # Pinned inputs and how to refresh them:
@@ -64,18 +66,26 @@ RUN go build -trimpath -tags sqlite_math_functions,sqlite_percentile,sqlite_fts5
 
 FROM debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tini python3 python3-boto3 \
+    && apt-get install -y --no-install-recommends ca-certificates tini python3 python3-boto3 nginx \
     && rm -rf /var/lib/apt/lists/* \
     && test -x /usr/bin/tini
 
 COPY --from=build /out/pocketcontext /out/litestream /usr/local/bin/
 COPY docker/litestream.yml /etc/litestream.yml
 COPY --chmod=0755 docker/entrypoint.py /usr/local/bin/wikicontext-entrypoint.py
+COPY --chmod=0755 deploy/demo/retention.py /usr/local/bin/wikicontext-demo-retention.py
+COPY --chmod=0755 deploy/demo/contact_replica.py /usr/local/bin/wikicontext-demo-contact-replica.py
+COPY --chmod=0755 deploy/demo/once_runtime.py /usr/local/bin/wikicontext-demo-once.py
+COPY deploy/demo/reset.py /usr/local/lib/wikicontext-demo/reset.py
+COPY deploy/demo/contact-litestream.yml /etc/wikicontext-demo-contacts-litestream.yml
 WORKDIR /app
 COPY POCKETCONTEXT_VERSION pocketcontext.json ./
 COPY pb_migrations/ ./pb_migrations/
 COPY pb_hooks/ ./pb_hooks/
 COPY --from=reader /ui/dist/ ./ui/dist/
+COPY legal/ ./legal/
+# Read only as the installation contract's tested client pin; never executed by the server.
+COPY skills/wikicontext/wikicontext ./skills/wikicontext/wikicontext
 
 # The container runs as root. ONCE creates and mounts the /storage volume and offers no option to
 # set its owner or the container's user, and the server binds port 80.
@@ -86,7 +96,8 @@ ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/wikicontext-entrypoint.py"]
 
 ARG REVISION=unknown
 ENV WIKICONTEXT_REVISION=${REVISION}
-LABEL org.opencontainers.image.title="WikiContext" \
-      org.opencontainers.image.description="Source-grounded wiki knowledge with protected originals and reproducible Obsidian exports" \
-      org.opencontainers.image.source="https://github.com/pocketcontext/wikicontext" \
+RUN printf '%s\n' "${REVISION}" > /usr/local/share/wikicontext-revision
+LABEL org.opencontainers.image.title="WikiContext Demo" \
+      org.opencontainers.image.description="Disposable public WikiContext demo: private personal wikis reset daily at 00:00 UTC" \
+      org.opencontainers.image.source="https://github.com/pocketcontext/wikicontext-demo" \
       org.opencontainers.image.revision="${REVISION}"

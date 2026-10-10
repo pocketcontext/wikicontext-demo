@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from integration import ROOT, server, credentials
+from integration import ROOT, SEARCH, server, credentials
 
 
 def main():
@@ -34,8 +34,13 @@ def main():
             assert env['WIKICONTEXT_USER_PASSWORD'] not in result.stdout+result.stderr and token not in result.stdout+result.stderr
             assert result.returncode==expected,(argv,result.stdout,result.stderr)
             return json.loads(result.stdout) if result.stdout.startswith(('{','[')) else result.stdout
-        cli('whoami');cli('check')
-        assert cli('search','anything')['pages']==[]
+        me=cli('whoami');cli('check')
+        listed=cli('spaces')
+        assert [(s['kind'],s['role'],s['selected']) for s in listed]==[('personal','owner',True)] and me['space']==listed[0]['id']
+        cli('--space','missing00000000','whoami',expected=2)
+        cli('lint','--space','bad',expected=2)
+        if SEARCH:
+            assert cli('search','anything')['pages']==[]
         source=Path(tmp)/'source.md';source.write_text('The synthetic launch is on Tuesday.\n')
         ingested=cli('ingest',str(source));cli('ingest',str(source))
         pages=[]
@@ -43,8 +48,9 @@ def main():
         page=cli('create','pages',json.dumps({'slug':'synthetic-launch','kind':'concept'}))
         revision=cli('create','page_revisions',json.dumps({'run':run['id'],'page':page['id'],'title':'Synthetic launch','summary':'A synthetic test','body':'A launch on Tuesday [needs verification].'}))
         cli('publish',run['id'],'--expected-revision','1')
-        initial_search=cli('search','Tuesday')
-        assert initial_search['pages'][0]['id']==revision['id']
+        if SEARCH:
+            initial_search=cli('search','Tuesday')
+            assert initial_search['pages'][0]['id']==revision['id']
         assert cli('lint')['findings']
         result=cli('export-obsidian',str(Path(tmp)/'vault'))
         assert result['sequence']==1 and (Path(tmp)/'vault/wiki/synthetic-launch.md').is_file()
@@ -54,13 +60,18 @@ def main():
         other=cli('create','pages',json.dumps({'slug':'another-launch','kind':'concept'}))
         cli('create','page_revisions',json.dumps({'run':second['id'],'page':other['id'],'title':'Tuesday launch','summary':'A second synthetic launch','body':'Tuesday launch details [needs verification].'}))
         cli('publish',second['id'],'--expected-revision','1')
-        ranked=cli('search','Tuesday','--limit','1')
-        assert len(ranked['pages'])==1 and ranked['hasMore'] and ranked['nextOffset']==1
-        tail=cli('search','Tuesday','--publication',ranked['publication'],'--generation',ranked['generation'],'--offset','1','--limit','1')
-        assert len(tail['pages'])==1 and not tail['hasMore'] and tail['nextOffset'] is None
-        assert tail['pages'][0]['id']!=ranked['pages'][0]['id']
-        assert cli('search','Tuesday','--sequence','1')['pages'][0]['id']==revision['id']
-        cli('search','Tuesday','--publication',initial_search['publication'],'--generation',initial_search['generation'],'--offset','1',expected=4)
+        if SEARCH:
+            ranked=cli('search','Tuesday','--limit','1')
+            assert len(ranked['pages'])==1 and ranked['hasMore'] and ranked['nextOffset']==1
+            tail=cli('search','Tuesday','--publication',ranked['publication'],'--generation',ranked['generation'],'--offset','1','--limit','1')
+            assert len(tail['pages'])==1 and not tail['hasMore'] and tail['nextOffset'] is None
+            assert tail['pages'][0]['id']!=ranked['pages'][0]['id']
+            assert cli('search','Tuesday','--sequence','1')['pages'][0]['id']==revision['id']
+            # Private search fingerprints only this publication's visible content, so a later
+            # publication leaves the earlier publication's generation and pagination valid.
+            pinned=cli('search','Tuesday','--publication',initial_search['publication'],'--generation',initial_search['generation'],'--offset','1')
+            assert pinned['generation']==initial_search['generation'] and pinned['pages']==[] and not pinned['hasMore']
+            cli('search','Tuesday','--publication',initial_search['publication'],'--generation','0'*64,'--offset','1',expected=4)
         cli('search','Tuesday','--offset','1',expected=2)
         cli('publish',run['id'],'--expected-revision','1',expected=4)
         cli('update','ingestion_runs',run['id'],'{"status":"cancelled"}',expected=2)
@@ -88,6 +99,10 @@ def main():
         assert latest['rows']==[['']]
         cache=list((Path(tmp)/'cache/wikicontext').glob('*.json'))
         assert cache and all(p.stat().st_mode & 0o077 == 0 for p in cache)
+        # Creates default to the selected space; a foreign or unknown space is indistinguishable.
+        assert cli('get','pages',page['id'])['space']==me['space']
+        cli('create','pages',json.dumps({'slug':'elsewhere','kind':'concept'}),'--space','missing00000000',expected=2)
+        cli('create','pages',json.dumps({'slug':'elsewhere','kind':'concept','space':'missing00000000'}),expected=1)
         cli('logout')
         if args.trace:
             events = [json.loads(line) for line in trace_output.read_text().splitlines()]

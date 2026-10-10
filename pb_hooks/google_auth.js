@@ -11,7 +11,11 @@ function domain() {
 }
 
 function authenticate(e) {
-  const workspace = domain();
+  const demo = require(`${__hooks}/demo.js`);
+  const publicDemo = demo.enabled();
+  // The public demo admits any verified Google account; its daily generation must be current.
+  if (publicDemo) demo.current(e.app);
+  const workspace = publicDemo ? "" : domain();
   if (e.record && e.record.getBool("disabled")) {
     throw new ForbiddenError("This WikiContext account is disabled.");
   }
@@ -23,7 +27,8 @@ function authenticate(e) {
       typeof email !== "string" || !email || raw.email !== email ||
       email.split("@").length !== 2 ||
       (workspace && (raw.hd !== workspace || email.split("@")[1].toLowerCase() !== workspace))) {
-    throw new ForbiddenError("A verified Google Workspace account in the configured domain is required.");
+    throw new ForbiddenError(publicDemo ? "A verified Google account is required." :
+      "A verified Google Workspace account in the configured domain is required.");
   }
   // PocketBase's initial email lookup is case-sensitive. Resolve case variants
   // before provisioning so an existing identity (including a disabled one)
@@ -51,11 +56,26 @@ function authenticate(e) {
 
   // Domain configuration explicitly enables Google Workspace onboarding. Without
   // it, only an existing provisioned identity may authenticate.
-  if (!workspace && !e.record) throw new ForbiddenError("WikiContext account provisioning is disabled.");
+  if (!publicDemo && !workspace && !e.record) throw new ForbiddenError("WikiContext account provisioning is disabled.");
   // Never trust client-selected IDs, passwords, verification, access flags or
   // names. Google supplies identity, PocketBase generates the account password.
   const name = typeof user.name === "string" ? user.name.trim().slice(0, 200) : "";
   e.createData = {email: email, name: name || email.split("@")[0].slice(0, 200)};
+  if (publicDemo) {
+    // Consent and contact records are keyed by the stable Google subject, never
+    // by email or the daily account ID. An email match alone cannot rebind it.
+    const subject = raw.sub;
+    if (typeof subject !== "string" || !subject || subject.length > 255) {
+      throw new ForbiddenError("A verified Google subject is required.");
+    }
+    if (subject !== user.id) throw new ForbiddenError("Google subject mismatch.");
+    if (e.record) {
+      const links = e.app.findRecordsByFilter("_externalAuths", 'recordRef = {:a} && provider = "google"', "", 1, 0, {a: e.record.id});
+      if (!links.length || links[0].getString("providerId") !== subject) {
+        throw new ForbiddenError("Google identity does not match this demo account.");
+      }
+    }
+  }
   return e.next();
 }
 

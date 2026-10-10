@@ -1,0 +1,11 @@
+[Unit]
+Description=Fenced WikiContext demo reset
+
+[Service]
+Type=oneshot
+UMask=0077
+EnvironmentFile=/etc/wikicontext-demo/reset.env
+ExecStart=/usr/bin/python3 /opt/wikicontext-demo/deploy/demo/reset.py --config /etc/wikicontext-demo/reset.json
+TimeoutStartSec=3600
+NoNewPrivileges=true
+PrivateTmp=true

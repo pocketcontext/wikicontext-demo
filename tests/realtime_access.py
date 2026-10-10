@@ -24,6 +24,7 @@ def main():
         }, admin)
         user_path = '/api/collections/users/records/' + user['id']
         token = request('POST', '/api/collections/users/auth-with-password', credentials)['token']
+        space = request('POST', '/api/context/query', {'sql': "SELECT id FROM spaces WHERE kind = 'personal'"}, token)['rows'][0][0]
         messages = queue.Queue()
 
         def listen():
@@ -48,7 +49,7 @@ def main():
         client_id = data['clientId']
         subscriptions = {'clientId': client_id, 'subscriptions': ['ingestion_runs/*']}
         request('POST', '/api/realtime', subscriptions, token, expected=204)
-        project = request('POST', '/api/collections/ingestion_runs/records', {'key': 'live', 'description': 'Before disable', 'status': 'staging'}, admin)
+        project = request('POST', '/api/collections/ingestion_runs/records', {'space': space, 'key': 'live', 'description': 'Before disable', 'status': 'staging'}, admin)
         event, data = messages.get(timeout=5)
         assert event.startswith('ingestion_runs/') and data['record']['id'] == project['id'], (event, data)
         project_path = '/api/collections/ingestion_runs/records/' + project['id']

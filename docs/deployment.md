@@ -1,61 +1,64 @@
-# Deployment procedures
+# Demo deployment procedures
 
-WikiContext is deployed at `wiki.pocketcontext.com`, using the public image
-`ghcr.io/pocketcontext/wikicontext`. See [the release record](../DEPLOYMENT.md) for
-source/digests, completed checks and remaining browser verification.
-The maintained `once-pocketcontext-v2` scaffold controls that hostname.
-CI builds and exercises containers natively on AMD64 and ARM64. Publication on main
-requires both architecture checks (configuration, smoke and S3/Litestream recovery) and
-the full application test suite on both architectures. Release archive access follows
-repository visibility; registry package visibility is configured independently.
-CD runs only when `COLORS_PROFILE` names the configured GitHub deployment environment.
+**Not deployed.** This repository builds `ghcr.io/pocketcontext/wikicontext-demo`
+for the planned origin `https://wiki-demo.pocketcontext.com` on the
+`pocketdeploy-v1` host. Production WikiContext (`wiki.pocketcontext.com`,
+`ghcr.io/pocketcontext/wikicontext`) is deployed only from `pocketcontext/wikicontext`;
+never point this image, its buckets or its workflows at production. Release
+controls are in [CI and deployment](ci-and-deployment.md); the demo lifecycle,
+API contract, quotas and contact retention are in [demo operations](demo-operations.md).
 
-The container exposes HTTP port 80 and `/up`; mount persistent `/storage`.
-The root URL serves the bundled read-only wiki reader. Its static assets are built
-in a separate Node stage; the runtime remains the existing Go/Python image. Keep
-the same Google OAuth redirect at the approved origin's `/api/oauth2-redirect`.
-No new hostname, OAuth client or cloud resources are required for the reader.
-It builds the commit in `POCKETCONTEXT_VERSION` with CGO. The pinned Go/base images
-and Litestream checksums are inherited from AccountContext. Container CI must build
-and verify them before any release. Run:
+The container exposes HTTP port 80 and `/up`; mount persistent `/storage`. The root
+serves the bundled reader; `/terms/` and `/privacy/` serve `legal/` drafts in demo
+mode. It builds the commit in `POCKETCONTEXT_VERSION` with CGO, with pinned
+base images and Litestream checksums. Container gates:
 
 ```sh
+python3 docker/once_smoke.py --image wikicontext:ci
 python3 docker/smoke.py config --image wikicontext:ci
 python3 docker/smoke.py smoke --image wikicontext:ci
 python3 docker/object_storage_smoke.py --image wikicontext:ci --minio-image wikicontext-minio-fixture:9e49d5e-7394ce0
 ```
 
-The recovery check uses synthetic original attachments and an isolated MinIO fixture.
-It restores an empty volume through normal startup and checks remote original bytes,
-replica consistency, fail-closed recovery and graceful shutdown. Never run a restore
-writer against the production replica beside the live instance.
+## Demo configuration
 
-## Configuration
+ONCE supplies only `BASE_URL` and `WIKICONTEXT_DEMO_ONCE=true`. The supervisor
+refuses any origin other than an HTTPS `wiki-demo.*`, `demo-wiki.*` or
+`wikicontext-demo.*` host. Private bindings are sent once over the control socket
+(`control configure`, bounded JSON on stdin) and stored mode 0600 inside the
+volume; they never appear in ONCE labels, arguments, logs or Git. The required
+set is:
 
-Set `BASE_URL` to the approved HTTPS origin. Set paired
-`WIKICONTEXT_SUPERUSER_EMAIL`/`WIKICONTEXT_SUPERUSER_PASSWORD` for maintenance provisioning;
-ordinary operations use default `users`. Enable a separate Internal Google Web client
-with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and
-`WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN`. Configure both the CLI loopback redirect
-`http://127.0.0.1:8765/callback` and the approved origin's `/api/oauth2-redirect`.
-Every admitted, enabled user can read and edit shared wiki content. Google JIT must
-verify trusted claims; public password signup stays blocked.
+- `WIKICONTEXT_S3_{BUCKET,ENDPOINT,REGION,ACCESS_KEY_ID,SECRET_ACCESS_KEY}` for
+  `pocketdeploy-v1-wikicontext-demo-files`;
+- `LITESTREAM_{BUCKET,ENDPOINT,REGION,PATH,ACCESS_KEY_ID,SECRET_ACCESS_KEY}` for
+  `pocketdeploy-v1-wikicontext-demo-replica`;
+- `CONTACTS_LITESTREAM_{BUCKET,ENDPOINT,REGION,PATH,ACCESS_KEY_ID,SECRET_ACCESS_KEY}`
+  for `pocketdeploy-v1-wikicontext-demo-contacts-replica`;
+- `WIKICONTEXT_GOOGLE_CLIENT_ID`/`WIKICONTEXT_GOOGLE_CLIENT_SECRET` for a
+  dedicated External Google Web client (any verified Google account) with redirects
+  `https://wiki-demo.pocketcontext.com/api/oauth2-redirect` and
+  `http://127.0.0.1:8765/callback`;
+- `WIKICONTEXT_DEMO_CONTACT_TOKEN` (at least 32 random characters).
 
-The documented production architecture uses private R2 bucket `wikicontext-replica`
-and prefix `once-v2/wikicontext-production` for Litestream, and separate private
-bucket `wikicontext-files` for source originals. Set `LITESTREAM_BUCKET`,
-`LITESTREAM_PATH`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`,
-`LITESTREAM_REGION` and `LITESTREAM_ENDPOINT`. Set all of
-`WIKICONTEXT_S3_BUCKET`, `WIKICONTEXT_S3_ENDPOINT`, `WIKICONTEXT_S3_REGION`,
-`WIKICONTEXT_S3_ACCESS_KEY_ID` and `WIKICONTEXT_S3_SECRET_ACCESS_KEY`;
-`WIKICONTEXT_S3_FORCE_PATH_STYLE` defaults to `true`.
-Use separate credentials for originals and replicas. Never reuse sibling replicas.
-Keep credentials only in the maintained `once-pocketcontext-v2` scaffold's private
-configuration. Groq transcription credentials belong to the ingestion agent.
+Optional: `WIKICONTEXT_S3_FORCE_PATH_STYLE`, `LITESTREAM_SYNC_INTERVAL`,
+`CONTACTS_LITESTREAM_RETENTION_HOURS` (at most 672), `CONTACTS_LITESTREAM_SYNC_INTERVAL`.
+The three buckets and the three access keys must all differ; the daily reset
+deletes the whole files and replica buckets and never receives contact
+credentials. Keep source values in the operator's private `.envrc.private` under
+app-specific names (for example `COLORS_PAR_APP_WIKICONTEXT_DEMO_*`); never
+reuse production `COLORS_PAR_APP_WIKICONTEXT_*` values. The supervisor sets
+`WIKICONTEXT_DEMO_MODE`, `WIKICONTEXT_DEMO_GENERATION`, the reset fence,
+`WIKICONTEXT_DEMO_CONTACT_URL=http://127.0.0.1:8781` and
+`WIKICONTEXT_TRUSTED_PROXY_HEADER=X-Forwarded-For` for its children.
 
-The container requires both services and enables `WIKICONTEXT_RATE_LIMITS=true`.
-There is no replication-disabled or local-originals mode. Run the pinned server
-directly for isolated local application development.
+First installation, after the volume exists and bindings are configured, is
+`control initialize` (contacts init plus the first daily generation). Never
+initialize an existing volume or a populated replica; use `control adopt` with a
+verified three-database handoff for host moves.
+
+The inherited single-application container mode (without `WIKICONTEXT_DEMO_ONCE`)
+remains available for the container gates below and isolated development.
 
 ## Startup and complete recovery
 
@@ -120,35 +123,19 @@ python3 tests/deploy_workflow.py
 python3 docker/object_storage_smoke.py --image wikicontext:ci --minio-image wikicontext-minio-fixture:9e49d5e-7394ce0
 ```
 
-### Historical local-original archives
-
-The new container neither produces, prunes nor restores complete local-file
-archives. Preserve retained archives and their historical volumes. For those
-archives only, retain the old multiarchitecture image
-`ghcr.io/pocketcontext/wikicontext@sha256:390cae0cadc9828bbecd63e00e88fa4019c3c0157dff37e589d85227af9d1028`
-(source `1a625b7f84370abc2c4719346c27e287a7282165`, 4 October 2026).
-Its `/usr/local/bin/wikicontext-backup.py restore --archive KEY` command remains
-available when invoked explicitly through a Python entrypoint override. Use that
-image's documented legacy replica credentials and an empty isolated destination;
-never attach a recovered writer to the live replica. Check schema compatibility,
-verify its database and originals, and migrate files before adopting the new
-container. Removing runtime support does not authorize archive or volume deletion.
-
 ## Updates
 
-Disable ONCE automatic updates. The maintained `once-pocketcontext-v2` scaffold
-owns production provisioning and deployment configuration. Its fixed-target update
-wrapper must lock, verify the exact application/image, pull, gracefully stop the
-sole writer, and update only that target. Never use an overlapping ONCE update.
-The older `deploy/bootstrap-wikicontext.py` is retired and always refuses execution;
-it hardcoded the obsolete local-file replica target. `init` initializes application
-storage only and does not provision cloud resources or change deployment policy.
+Releases use only the restricted demo dispatcher described in
+[CI and deployment](ci-and-deployment.md); ONCE automatic updates and backups stay
+disabled. `deploy/install.py`, `deploy/deploy-wikicontext.py` and
+`deploy/bootstrap-wikicontext.py` are retired and refuse execution. Container
+`init` initializes application storage only; it never provisions cloud resources.
 
 ## Runtime migration freeze
 
 The application pins PocketContext `976ddf71a4734530adefe4a56633658a0894b449`,
 which retains the runtime maintenance API and fixes writable PocketBase backup
-creation under the SQLite guard. Verify API support before attempting a production
+creation under the SQLite guard. Verify API support before attempting a live
 freeze; images predating the maintenance feature do not expose it.
 
 An operator with an existing valid superuser token reads
@@ -198,6 +185,9 @@ python3 tests/maintenance.py --binary /absolute/path/to/maintenance-capable/pock
 ```
 
 ## Attribution
+
+Demo admission, consent, reset, contact and ONCE lifecycle code is ported from
+`pocketcontext/vaultcontext-demo`.
 
 Container, Litestream, immutable-file backup, smoke/MinIO fixture, bootstrap and
 single-writer deployment patterns were adapted from sibling AccountContext.

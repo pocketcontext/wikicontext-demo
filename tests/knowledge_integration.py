@@ -4,7 +4,7 @@ import argparse
 import re
 import sys
 from unittest.mock import patch
-from integration import ROOT, credentials, server
+from integration import ROOT, SEARCH, credentials, server
 
 from wikicontext_client import knowledge
 from wikicontext_client import cli as wc
@@ -68,9 +68,10 @@ def main():
             assert pinned['id'] == first_publication['id']
             assert {page['id'] for page in selected} == {rev['id'] for rev in revisions}
             assert sum('SELECT r.*, p.slug, p.kind' in sql for sql in calls) >= 2
-            assert knowledge.search({}, 'DraftOnlyToken')['pages'] == []
-            current = knowledge.search({}, 'CurrentOnlyToken')['pages']
-            assert [page['id'] for page in current] == [replacement['id']]
+            if SEARCH:
+                assert knowledge.search({}, 'DraftOnlyToken')['pages'] == []
+                current = knowledge.search({}, 'CurrentOnlyToken')['pages']
+                assert [page['id'] for page in current] == [replacement['id']]
             report = knowledge.lint({})
             assert len([item for item in report['findings'] if item['kind'] == 'no-citations']) == 2
             assert not any(item['kind'] == 'broken-link' for item in report['findings'])

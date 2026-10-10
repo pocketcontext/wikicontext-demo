@@ -13,7 +13,7 @@ it("keeps a deep-linked source visible when it is outside the result page, witho
     .mockResolvedValueOnce([selected])
     .mockResolvedValueOnce([{ ...selected, original_name: "slide.png", original: "slide.png", media_type: "image/png", source_date: "", sha256: "synthetic" }]);
   const onTitleChange = vi.fn();
-  render(<EvidenceBrowser collection="sources" id={selected.id} term="" publication="" offset={20} navigation={null} onTitleChange={onTitleChange} />);
+  render(<EvidenceBrowser space="space0000000001" collection="sources" id={selected.id} term="" publication="" offset={20} navigation={null} onTitleChange={onTitleChange} />);
   const current = await screen.findByRole("navigation", { name: "Current evidence record" });
   expect(within(current).getByRole("link", { name: selected.title })).toHaveAttribute("aria-current", "page");
   expect(current).not.toHaveTextContent(selected.id);

@@ -4,7 +4,7 @@ Current release controls and platform coverage: [common CI and deployment contra
 
 An agent-maintained knowledge base on PocketContext. Sources, extracted passages, versioned pages, citations, links and publication history live in WikiContext. The browser reader renders published pages and updates when agents publish. Obsidian consumes a reproducible Markdown export. Ingestion and agent questions use the portable skill and authenticated APIs.
 
-All admitted Workspace users share read/write access. PocketBase's existing default `users` collection supplies identities, with verified Workspace Google JIT and public signup blocked. New logins gain shared content access, never account administration. Operators disable accounts to revoke application sessions; Google suspension alone does not revoke an existing session. Re-enabling requires fresh login. Seven-day tokens renew during active Google client use.
+This repository is the WikiContext demo fork: every record belongs to a space, and each account has a private personal space. Personal spaces only at launch; group spaces (owner/editor/reader members) are supported by the data model, access rules and tests but are a later enablement with no ordinary REST management. SQL (filtered snapshots), REST, realtime and protected downloads each require active membership of the record's space, and foreign records look absent. See [spaces](docs/data-model.md#spaces-and-membership). PocketBase's existing default `users` collection supplies identities, with verified Google enrollment and daily demo consent. Workspace-only authentication remains available for isolated non-demo validation. New logins gain their own personal space, never account administration. Operators disable accounts to revoke application sessions; Google suspension alone does not revoke an existing session. Re-enabling requires fresh login. Seven-day tokens renew during active Google client use.
 
 ## Run locally
 
@@ -19,19 +19,21 @@ make build
 
 The pinned build includes `sqlite_math_functions,sqlite_percentile,sqlite_fts5`.
 Authenticated SQL supports `json_each`/`json_tree` and median/percentile aggregates.
-Published-page search uses the authenticated FTS5 endpoint with immutable
-publication scopes and generation-checked pagination. See the
-[search contract and maintenance guide](docs/fts-adoption.md).
+The shared FTS5 index is removed: it spanned every space. Published-page search
+uses private per-requester indexes configured in `pocketcontext.json`. The server
+pin includes private-search support. See
+[private search](docs/fts-adoption.md).
 
-Keep data outside Git. Provision users through operator maintenance, or configure a separate Google Web client with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and `WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN`. Register `http://127.0.0.1:8765/callback` and the approved origin's `/api/oauth2-redirect`. Use ordinary user credentials for knowledge operations. Production runs at https://wiki.pocketcontext.com. See [release verification](DEPLOYMENT.md) and [deployment procedures](docs/deployment.md).
+Keep data outside Git. Provision users through operator maintenance, or configure a separate Google Web client with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and `WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN`. Register `http://127.0.0.1:8765/callback` and the approved origin's `/api/oauth2-redirect`. Use ordinary user credentials for knowledge operations. The intended demo origin is https://wiki-demo.pocketcontext.com; it is not deployed. Public demo mode requires the separate admission, contact and generation configuration in [demo operations](docs/demo-operations.md). See [release verification](DEPLOYMENT.md) and [deployment procedures](docs/deployment.md).
 
 ## Browser reader
 
-Open the application origin and sign in with your Workspace Google identity.
-Existing password accounts can use the secondary password form. The reader is
+In public demo mode, open the application origin, sign in with a verified Google
+account and accept the daily demo terms. Password sign-in is disabled. Isolated
+non-demo validation retains Workspace Google and existing password accounts. The reader is
 read-only; agents continue to ingest, synthesize and publish through the skill.
 Search opens ranked published-page results with plain excerpts and Load more.
-The sidebar collection selector browses Pages, Sources and Passages. Source/passage text filtering searches all shared evidence, including evidence not yet cited in a publication, with paginated URL state. Permanent `/#/sources/<id>` and `/#/passages/<id>` links support authenticated evidence navigation and protected original downloads; source pages link to their passages. Copy record/search links exclude temporary file tokens. Page controls copy live or publication-pinned historical links. The sidebar remains available for browsing. `/` or Ctrl/Cmd+K focuses search; query
+The sidebar collection selector browses Pages, Sources and Passages. Source/passage text filtering searches evidence in the selected space, including evidence not yet cited in a publication, with paginated URL state. Permanent `/#/sources/<id>` and `/#/passages/<id>` links support authenticated evidence navigation and protected original downloads; source pages link to their passages. Copy record/search links exclude temporary file tokens. Page controls copy live or publication-pinned historical links. The sidebar remains available for browsing. `/` or Ctrl/Cmd+K focuses search; query
 and publication are preserved in navigation. Wiki links, backlinks, an outline and
 source citations support navigation. A citation opens its original passage and
 offers an authenticated original-file download.
@@ -59,6 +61,12 @@ reviewed CRM link; group pages record purpose and members. Membership represents
 accountability, grants no permissions and sends no notifications. Nested groups
 and automatic CRM synchronization are outside scope. Agents maintain these
 relationships through cited revisions; properties are read-only in the browser.
+
+The reader defaults to the account's personal space and shows a selector when
+more than one space is visible. Publications, evidence and search are scoped to
+the selected space. Demo onboarding shows daily consent, quotas and the UTC
+reset countdown; agent installation is offered only when the server advertises
+a released demo client.
 
 Frontend source is in `ui/`: React, TypeScript and Vite, with bundled Markdown
 rendering and the PocketBase SDK. Content reads use authenticated SQL; the SDK
@@ -91,11 +99,14 @@ Do not commit `ui/dist` or browser test output.
 The standalone launcher `skills/wikicontext/wikicontext` requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Add its directory to `PATH` to use the commands below. Its first run installs the client from a pinned Git revision. For development and validation, install the current package in a virtual environment with `python3 -m pip install .`. Release the tested package commit first, then update the launcher to that full commit and verify the copied launcher through uv. The package pins its ObserveContext instrumentation dependency separately.
 
 
-Install with `npx skills add pocketcontext/wikicontext --skill wikicontext`, or copy `skills/wikicontext/` to your agent's skill directory. It works outside this repository. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`; use Google login or the optional `WIKICONTEXT_USER_PASSWORD` for an existing account.
+After the demo client is published, install with `npx skills add pocketcontext/wikicontext-demo --skill wikicontext`, or copy `skills/wikicontext/` to your agent's skill directory. It works outside this repository. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`; use Google login for public demo accounts. Existing passwords are supported only outside demo mode. Commands operate in the selected space: `--space ID`, else `WIKICONTEXT_SPACE`, else your personal space; `wikicontext spaces` lists memberships.
+
+The launcher still pins the upstream `pocketcontext/wikicontext` client commit, which predates spaces. Before release, publish the tested client from `pocketcontext/wikicontext-demo` and repoint the launcher's Git URL and full commit there (and the `npx skills add` source).
 
 ```sh
 wikicontext login --google
 wikicontext check
+wikicontext spaces
 wikicontext ingest /path/to/source.md
 wikicontext search 'launch date'
 wikicontext lint
@@ -156,7 +167,7 @@ validators do not recognize them.
 
 The exporter writes `wiki/` and `raw/` under the destination. Numbered source footnotes, wiki-links, page metadata, index and publication log are deterministic. Exports pin one immutable publication; `--sequence N` selects history. An ownership manifest detects local edits/deletions, prevents overwriting unrelated files, and supports interrupted-export recovery. `.obsidian/` remains untouched. Avoid concurrent local editing during export; the exporter lock coordinates exporters, not external editors. Use a fresh destination for initial migration: existing authored wiki files are not silently adopted. Downloaded files cannot be revoked remotely.
 
-See [data model](docs/data-model.md) and [skill workflows](skills/wikicontext/references/workflows.md) for synthesis, idempotency, queries, corrections and publication. Structural lint does not establish semantic correctness. Full-text search indexes published revision title, summary and body; it uses token matching rather than the former arbitrary substring matching. It does not provide vector search or generated answers. Raw SQL queries must explicitly distinguish draft revisions from the published manifest.
+See [data model](docs/data-model.md) and [skill workflows](skills/wikicontext/references/workflows.md) for synthesis, idempotency, queries, corrections and publication. Structural lint does not establish semantic correctness. Full-text search (when enabled) indexes published revision title, summary and body of spaces the requester can read; it uses token matching rather than the former arbitrary substring matching. It does not provide vector search or generated answers. Raw SQL queries must explicitly distinguish draft revisions from the published manifest.
 
 ## SQL diagnostics
 
@@ -165,7 +176,7 @@ OpenAI's metered API, see [the semantic search proof of concept](tools/semantic_
 Preparation is read-only; model searches upload the selected corpus to OpenAI.
 This experiment does not replace the application's FTS search or browser UI.
 
-For published-page body sizes, pin a publication sequence and expand its manifest:
+SQL returns rows from every space you can read; filter by `space`. For published-page body sizes, pin a space's publication sequence and expand its manifest:
 
 ```sql
 SELECT count(*) AS pages,
@@ -174,10 +185,10 @@ SELECT count(*) AS pages,
 FROM publications AS pub
 JOIN json_each(pub.manifest) AS selected
 JOIN page_revisions AS r ON r.id = selected.value AND r.page = selected.key
-WHERE pub.sequence = 1 AND r.archived = false;
+WHERE pub.space = 'SPACE_ID_______' AND pub.sequence = 1 AND r.archived = false;
 ```
 
-Replace `1` with the selected publication sequence. This excludes drafts and
+Replace the space ID and `1` with the selected space and publication sequence. This excludes drafts and
 archived pages and returns one aggregate row. The statistics describe character
 counts, not query latency or memory use; an empty publication returns NULL sizes.
 `percentile_cont` takes a fraction from 0 to 1; `percentile` takes 0 to 100.
@@ -189,6 +200,7 @@ Use synthetic isolated databases only. From this repository, with the pinned ser
 ```sh
 python3 tests/launcher.py
 python3 tests/integration.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/spaces.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/tracing.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/publication_review.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/home.py --binary /absolute/path/to/pinned/pocketcontext
@@ -222,41 +234,29 @@ assets against a synthetic isolated database:
 ```sh
 (cd ui && pnpm exec playwright install chromium)
 python3 tests/ui_browser.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/demo_website.py --binary /absolute/path/to/pinned/pocketcontext
 ```
 
-The LocalAuthStore migration passed the backend validation commands above,
-reader typecheck/build, 32 unit tests and four actual-server browser scenarios.
-The added scenario covers independently opened tabs, reload, cross-tab account
-changes/logout, restored deep links and rejection of legacy per-tab credentials.
-Tests also cover realtime publications/reconnect, revocation, idle-token expiry
-and late refresh.
+CI runs reader type checks, unit tests and isolated browser checks before image
+publication. Space-role and membership-revocation integration checks are required
+on both architectures, even while group spaces remain hidden.
 
-The 30 September 2026 navigation change passed every validation command above
-against the unchanged 91d7ef1 pin, reader typecheck, 32 unit tests, production
-build and both actual-server browser scenarios (including evidence permalinks,
-reload, collection search and keyboard navigation).
+Regenerate the SQL reference only after reviewing intentional changes:
+`tests/skill.py --binary ... --write-schema`. Container CI additionally runs
+configuration, persistence, crash restore and graceful shutdown checks.
+Main-branch image publication requires the application and native container
+gates plus `WIKICONTEXT_DEMO_PUBLISH=true`; deployment uses the separate
+`wikicontext-demo` environment and demo deployment variables. See
+[the release contract](docs/ci-and-deployment.md) and
+[current validation evidence](docs/demo-validation.md).
 
-The Welcome and evidence layout update passed all 23 backend validation commands
-against the unchanged 91d7ef1 pin, reader typecheck, 57 unit tests, production
-build and all eight isolated browser scenarios. Browser checks include full-text
-Welcome search, topic navigation, responsive evidence layout, protected image
-enlargement, historical views and session isolation.
-
-CI runs reader type checks, unit tests and the production browser suite before
-image publication. Container smoke checks also verify the Python entrypoint and bundled assets.
-
-Regenerate the SQL reference only after reviewing intentional changes: `tests/skill.py --binary ... --write-schema`. Container CI additionally runs configuration, persistence, crash restore and graceful shutdown checks. Main-branch image publication is gated on application tests and native container checks; deployment additionally requires the configured `COLORS_PROFILE` environment. Native AMD64/ARM64 container checks passed in release CI. A real Google browser login and live Groq transcription remain unverified; see the release record.
-
-## Existing wiki migration
-
-The runtime migration freeze and its server-pin release prerequisite are described
-in [deployment procedures](docs/deployment.md#runtime-migration-freeze).
-
-The existing `wiki/` checkout has not been modified or migrated. Import originals through ordinary API ingestion, retrieve actual Git LFS audio rather than its pointer, and import authored pages as explicitly labelled legacy revisions with mapped evidence. Preserve slugs, original citations and legacy log text; do not claim imported legacy logs are server audit events. Compare a fresh generated vault before switching Obsidian. Never use direct SQLite writes or production data for migration tests. A bulk legacy importer is not supplied in this version.
+The inherited production WikiContext reader and container validation history is
+not evidence for this fork. The spaces migration refuses existing knowledge
+records; this disposable demo starts empty and does not import a production wiki.
 
 ## Infrastructure provenance
 
-Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. Server pin: `976ddf71a4734530adefe4a56633658a0894b449`.
+Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. The compatible server revision is `dc1dc6b0e88bbc46f36fa8441c8f6959bada4732`, recorded in `POCKETCONTEXT_VERSION`.
 
 ## Request observability
 
@@ -264,7 +264,9 @@ The pinned server enables an authenticated, bounded in-memory trace buffer for `
 
 ## Object storage deployment
 
-The production container requires Litestream replication and private PocketBase S3 file storage.
+The demo container requires Litestream replication and private PocketBase S3 file storage.
+Daily reset additionally purges the disposable files and replica buckets; retained
+contact preferences use a separate database and replica. See [demo operations](docs/demo-operations.md).
 The application can still run directly for isolated local development; the container
 has no local-originals or replication-disabled mode.
 Set all of `WIKICONTEXT_S3_BUCKET`, `WIKICONTEXT_S3_ENDPOINT`,
@@ -324,10 +326,10 @@ and deletes its own object to prove verification fails closed.
 
 ## Historical object-storage experiment
 
-The separate experiment workflow has been removed. Production uses only the
-main-only `once-v2` environment and common guarded release workflow. The retained
-verification tools below are historical operator tools, not automatic deployment
-paths or authorization to modify a live service. See the
+The separate experiment workflow was removed upstream. The retained verification
+tools below target historical production infrastructure and must not be used to
+validate this demo. They are not automatic deployment paths or authorization to
+modify a live service. Demo releases use the `wikicontext-demo` environment. See the
 [common CI and deployment contract](docs/ci-and-deployment.md).
 
 For the standalone recovery test, set disposable MinIO S3 and Litestream settings

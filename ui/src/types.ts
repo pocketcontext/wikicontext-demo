@@ -1,5 +1,7 @@
 export interface Publication {
   id: string;
+  /** Space whose latest manifest this publication may be. */
+  space: string;
   sequence: number;
   run: string;
   /** Stable page identity selected as this publication’s home, or empty for fallback. */

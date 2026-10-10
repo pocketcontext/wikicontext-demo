@@ -1,0 +1,21 @@
+[Unit]
+Description=Private durable WikiContext demo contact preferences
+After=network.target
+
+[Service]
+Type=simple
+User=wikicontext-demo
+Group=wikicontext-demo
+UMask=0077
+EnvironmentFile=/etc/wikicontext-demo/contacts.env
+ExecStart=/usr/bin/python3 /opt/wikicontext-demo/deploy/demo/contact_replica.py start --database /var/lib/wikicontext-demo/persistent/contacts.db --config /opt/wikicontext-demo/deploy/demo/contact-litestream.yml --service /opt/wikicontext-demo/deploy/demo/retention.py
+Restart=on-failure
+TimeoutStopSec=360
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/wikicontext-demo/persistent
+
+[Install]
+WantedBy=multi-user.target

@@ -26,6 +26,7 @@ const pages = [
 ];
 const publication: Publication = {
   id: "publication0001",
+  space: "space0000000001",
   sequence: 8,
   home: "",
   run: "run000000000001",

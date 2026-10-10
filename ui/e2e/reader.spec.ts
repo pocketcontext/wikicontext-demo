@@ -406,9 +406,10 @@ test("persistent SDK sessions share login, account changes and logout without re
   const second = await response.json();
   await peer.evaluate(session => localStorage.setItem("wikicontext.reader.auth", JSON.stringify(session)), second);
   await expect(page.getByRole("link", { name: "Open passage", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your wiki is empty — for now", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toHaveCount(0);
   await peer.reload();
-  await expect(peer.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
+  await expect(peer.getByRole("heading", { name: "Your wiki is empty — for now", exact: true })).toBeVisible();
   await peer.getByRole("button", { name: /Sign out/ }).click();
   await expect(page.getByRole("button", { name: /Google/ })).toBeVisible();
   await page.reload();

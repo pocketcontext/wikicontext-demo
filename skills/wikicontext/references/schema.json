@@ -1,5 +1,5 @@
 {
-  "permissionModel": "shared",
+  "permissionModel": "filtered-snapshot",
   "limits": {
     "timeoutMs": 2000,
     "maxRows": 500,
@@ -10,13 +10,21 @@
       "pages"
     ],
     "limits": {
+      "maxQueryBytes": 4096,
       "maxTerms": 16,
       "maxOffset": 10000,
       "maxScopeMembers": 10000,
       "maxLimit": 100,
       "defaultLimit": 20,
-      "maxQueryBytes": 4096
-    }
+      "maxIndexBytes": 8388608
+    },
+    "isolation": "private"
+  },
+  "snapshotLimits": {
+    "timeoutMs": 5000,
+    "maxRows": 100000,
+    "maxBytes": 33554432,
+    "maxConcurrent": 4
   },
   "tables": [
     {
@@ -52,6 +60,10 @@
         },
         {
           "name": "record",
+          "type": "TEXT"
+        },
+        {
+          "name": "space",
           "type": "TEXT"
         }
       ]
@@ -97,6 +109,10 @@
         },
         {
           "name": "updated_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "space",
           "type": "TEXT"
         }
       ]
@@ -159,6 +175,10 @@
         {
           "name": "clear_home",
           "type": "BOOLEAN"
+        },
+        {
+          "name": "space",
+          "type": "TEXT"
         }
       ]
     },
@@ -195,6 +215,10 @@
         },
         {
           "name": "updated_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "space",
           "type": "TEXT"
         }
       ]
@@ -261,6 +285,10 @@
         {
           "name": "property_evidence",
           "type": "JSON"
+        },
+        {
+          "name": "space",
+          "type": "TEXT"
         }
       ]
     },
@@ -297,6 +325,10 @@
         },
         {
           "name": "updated_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "space",
           "type": "TEXT"
         }
       ]
@@ -343,6 +375,10 @@
         {
           "name": "updated_by",
           "type": "TEXT"
+        },
+        {
+          "name": "space",
+          "type": "TEXT"
         }
       ]
     },
@@ -371,6 +407,10 @@
         },
         {
           "name": "home",
+          "type": "TEXT"
+        },
+        {
+          "name": "space",
           "type": "TEXT"
         }
       ]
@@ -421,18 +461,9 @@
         {
           "name": "version_label",
           "type": "TEXT"
-        }
-      ]
-    },
-    {
-      "name": "search_state",
-      "columns": [
-        {
-          "name": "generation",
-          "type": "TEXT"
         },
         {
-          "name": "id",
+          "name": "space",
           "type": "TEXT"
         }
       ]
@@ -490,6 +521,84 @@
         },
         {
           "name": "updated_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "space",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "space_members",
+      "columns": [
+        {
+          "name": "account",
+          "type": "TEXT"
+        },
+        {
+          "name": "active",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "revision",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "role",
+          "type": "TEXT"
+        },
+        {
+          "name": "space",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "spaces",
+      "columns": [
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "kind",
+          "type": "TEXT"
+        },
+        {
+          "name": "name",
+          "type": "TEXT"
+        },
+        {
+          "name": "revision",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "updated",
           "type": "TEXT"
         }
       ]

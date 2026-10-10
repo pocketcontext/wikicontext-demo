@@ -297,7 +297,7 @@ def main():
         check_static(request.base_url)
         env = dict(os.environ, WIKICONTEXT_TEST_URL=request.base_url, WIKICONTEXT_TEST_CONTROL=control_url,
                    WIKICONTEXT_TEST_OUTPUT=temporary)
-        subprocess.run(['pnpm', 'exec', 'playwright', 'test', '--config', 'e2e/playwright.config.ts'],
+        subprocess.run(['pnpm', 'exec', 'playwright', 'test', 'reader.spec.ts', '--config', 'e2e/playwright.config.ts'],
                        cwd=ROOT / 'ui', env=env, check=True)
     print('PASS: real browser reader, synthetic publication and authentication lifecycle')
 

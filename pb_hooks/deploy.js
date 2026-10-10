@@ -38,6 +38,10 @@ function settings(app) {
   if (remote) {
     if (s3Names.some(name => !env('WIKICONTEXT_S3_' + name)))
       throw new Error('Incomplete WikiContext object storage configuration');
+    if (env('WIKICONTEXT_S3_BUCKET') === env('LITESTREAM_BUCKET'))
+      throw new Error('Primary files and database replicas require separate buckets');
+    if (env('WIKICONTEXT_S3_ACCESS_KEY_ID') === env('LITESTREAM_ACCESS_KEY_ID'))
+      throw new Error('Primary files and database replicas require separate credentials');
     const style = env('WIKICONTEXT_S3_FORCE_PATH_STYLE') || 'true';
     if (!['true', 'false'].includes(style)) throw new Error('Invalid object storage path style');
     try {

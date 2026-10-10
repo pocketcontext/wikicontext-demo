@@ -36,6 +36,30 @@ export const pb = new PocketBase(
 );
 // Concurrent page/evidence queries share an endpoint but must not cancel each other.
 pb.autoCancellation(false);
+// Public-demo service signals. Outside demo mode a 401/403 clears the session as
+// before. In demo mode a 403 on a wiki API usually means today's terms were not
+// accepted, so the caller rechecks enrollment instead of discarding the login;
+// a 503 means the daily reset fenced the service.
+export type ServiceSignal = "enrollment" | "resetting";
+let demoMode = false;
+const signalListeners = new Set<(signal: ServiceSignal) => void>();
+export function setDemoMode(value: boolean): void { demoMode = value; }
+export function onServiceSignal(listener: (signal: ServiceSignal) => void): () => void {
+  signalListeners.add(listener);
+  return () => { signalListeners.delete(listener); };
+}
+function signal(value: ServiceSignal) { for (const listener of [...signalListeners]) listener(value); }
+/** Applies the session policy for a failed request made with `token`. */
+export function handleFailure(status: number | undefined, token: string, path = ""): void {
+  if (status === 503 && demoMode) { signal("resetting"); return; }
+  if (status !== 401 && status !== 403) return;
+  if (!token || token !== authStore.token) return;
+  if (demoMode && status === 403 && !path.startsWith("/api/demo/") && !path.startsWith("/api/collections/users/")) {
+    signal("enrollment");
+    return;
+  }
+  authStore.clear();
+}
 // Reject fully parsed responses from a previous identity before callers see them.
 const send = pb.send.bind(pb);
 pb.send = async <T = unknown>(path: string, options: SendOptions = {}): Promise<T> => {
@@ -48,8 +72,7 @@ pb.send = async <T = unknown>(path: string, options: SendOptions = {}): Promise<
     return result;
   } catch (error) {
     const status = (error as { status?: number }).status;
-    if (generation === sessionGeneration && token && token === authStore.token && (status === 401 || status === 403))
-      authStore.clear();
+    if (generation === sessionGeneration) handleFailure(status, token, path);
     throw error;
   }
 };
@@ -86,7 +109,6 @@ function windowSize(offset: number, limit: number): void {
 }
 
 export async function query<T>(sql: string): Promise<T[]> {
-  const initiatingToken = pb.authStore.token;
   const generation = sessionGeneration;
   try {
     const result = await pb.send<SQLResult>("/api/context/query", {
@@ -104,14 +126,8 @@ export async function query<T>(sql: string): Promise<T[]> {
         ) as T,
     );
   } catch (error) {
-    if (error && typeof error === "object" && "status" in error) {
-      if (
-        (error.status === 401 || error.status === 403) &&
-        pb.authStore.token === initiatingToken
-      )
-        pb.authStore.clear();
-      if (error.status === 413) throw new TruncatedQueryError();
-    }
+    if (error && typeof error === "object" && "status" in error && error.status === 413)
+      throw new TruncatedQueryError();
     throw error;
   }
 }
@@ -174,23 +190,47 @@ async function validatePublication(publicationId: string): Promise<boolean> {
   return true;
 }
 
+export interface Space {
+  id: string;
+  kind: "personal" | "group";
+  name: string;
+  role: "owner" | "editor" | "reader";
+}
+/** Active memberships of the signed-in account, personal space first. */
+export async function listSpaces(): Promise<Space[]> {
+  const account = pb.authStore.record?.id;
+  if (!account) throw new Error("Please sign in to continue");
+  const rows = await query<Space>(
+    `SELECT s.id, s.kind, s.name, m.role FROM spaces s JOIN space_members m ON m.space=s.id WHERE m.account=${identity(account)} AND m.active=1 ORDER BY CASE s.kind WHEN 'personal' THEN 0 ELSE 1 END, s.name, s.id LIMIT 200`,
+  );
+  return rows.filter((row) => /^[a-z0-9]{15}$/.test(row.id) && (row.kind === "personal" || row.kind === "group"));
+}
+/** The requested space when it is a membership, else the personal space, else the first. */
+export function selectSpace(spaces: Space[], requested = ""): Space | null {
+  return spaces.find((space) => space.id === requested)
+    ?? spaces.find((space) => space.kind === "personal")
+    ?? spaces[0]
+    ?? null;
+}
 export async function listPublications(
+  space: string,
   offset = 0,
   limit = 50,
 ): Promise<Publication[]> {
   windowSize(offset, limit);
   return query(
-    `SELECT id, sequence, run, home, created FROM publications ORDER BY sequence DESC LIMIT ${limit} OFFSET ${offset}`,
+    `SELECT id, space, sequence, run, home, created FROM publications WHERE space=${identity(space)} ORDER BY sequence DESC LIMIT ${limit} OFFSET ${offset}`,
   );
 }
-export async function latestPublication(): Promise<Publication | null> {
-  return (await listPublications(0, 1))[0] ?? null;
+export async function latestPublication(space: string): Promise<Publication | null> {
+  return (await listPublications(space, 0, 1))[0] ?? null;
 }
+/** A visible publication by ID; another space's publication looks absent. */
 export async function getPublication(id: string): Promise<Publication | null> {
   return (
     (
       await query<Publication>(
-        `SELECT id, sequence, run, home, created FROM publications WHERE id=${identity(id)} LIMIT 1`,
+        `SELECT id, space, sequence, run, home, created FROM publications WHERE id=${identity(id)} LIMIT 1`,
       )
     )[0] ?? null
   );
@@ -211,6 +251,17 @@ export class SearchChangedError extends Error {
     super("Search changed. Restart to see consistent results.");
   }
 }
+export type SearchFailure = "not-found" | "too-large" | "unavailable";
+const searchFailureMessages: Record<SearchFailure, string> = {
+  "not-found": "This publication is not available in your spaces.",
+  "too-large": "This space is too large to search right now. Browse the page list instead.",
+  unavailable: "Search is temporarily unavailable. Please retry shortly.",
+};
+export class SearchUnavailableError extends Error {
+  constructor(readonly reason: SearchFailure) {
+    super(searchFailureMessages[reason]);
+  }
+}
 export async function searchPages(
   publicationId: string,
   term: string,
@@ -228,7 +279,6 @@ export async function searchPages(
     );
   if (!(await validatePublication(publicationId)))
     throw new Error("This publication is unavailable");
-  const token = pb.authStore.token;
   let result: {
     index: string;
     scope: string;
@@ -251,12 +301,10 @@ export async function searchPages(
     });
   } catch (error) {
     if (error && typeof error === "object" && "status" in error) {
-      if (
-        (error.status === 401 || error.status === 403) &&
-        pb.authStore.token === token
-      )
-        pb.authStore.clear();
       if (error.status === 409) throw new SearchChangedError();
+      if (error.status === 404) throw new SearchUnavailableError("not-found");
+      if (error.status === 413) throw new SearchUnavailableError("too-large");
+      if (error.status === 503) throw new SearchUnavailableError("unavailable");
     }
     throw error;
   }
@@ -383,20 +431,28 @@ export async function getPage(
   return { ...page, citations, backlinks, links };
 }
 
+const googleRequestKey = "wikicontext-google-signin";
+let pendingSignIn: PocketBase | null = null;
 async function signIn(email?: string, password?: string): Promise<void> {
   const generation = sessionGeneration, token = authStore.token;
   const client = new PocketBase(pb.baseURL, new BaseAuthStore());
+  pendingSignIn = client;
   try {
     const auth = client.collection("users");
     const result = email === undefined
-      ? await auth.authWithOAuth2({ provider: "google" })
+      ? await auth.authWithOAuth2({ provider: "google", requestKey: googleRequestKey })
       : await auth.authWithPassword(email, password!);
     if (generation !== sessionGeneration || token !== authStore.token) throw new Error("Session changed");
     if (result.record.collectionName !== "users") throw new Error("Invalid workspace identity");
     authStore.save(result.token, result.record);
-  } finally { await client.realtime.unsubscribe(); }
+  } finally {
+    if (pendingSignIn === client) pendingSignIn = null;
+    await client.realtime.unsubscribe();
+  }
 }
 export async function loginGoogle(): Promise<void> { await signIn(); }
+/** Cancels a pending Google popup sign-in; the SDK closes its popup and stream. */
+export function cancelGoogleLogin(): void { pendingSignIn?.cancelRequest(googleRequestKey); }
 export async function loginPassword(email: string, password: string): Promise<void> { await signIn(email, password); }
 let refreshedAt = 0;
 let refreshedToken = "";
@@ -421,14 +477,6 @@ export async function refreshSession(): Promise<void> {
     refreshedToken = result.token;
     pb.authStore.save(result.token, result.record);
   } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "status" in error &&
-      (error.status === 401 || error.status === 403) &&
-      pb.authStore.token === initiatingToken
-    )
-      pb.authStore.clear();
     throw error;
   }
 }
@@ -492,6 +540,8 @@ export async function watchPublications(
 
 export const api = {
   loginGoogle,
+  cancelGoogleLogin,
+  listSpaces,
   loginPassword,
   refreshSession,
   logout,

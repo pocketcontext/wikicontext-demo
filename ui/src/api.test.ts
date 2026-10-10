@@ -312,8 +312,8 @@ describe("published knowledge reads", () => {
         collectionId: "_pb_users_auth_",
         collectionName: "users",
       });
-      vi.spyOn(pb, "send").mockRejectedValue({ status });
-      await expect(query("SELECT id FROM pages")).rejects.toEqual({ status });
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ message: "Revoked" }), { status }));
+      await expect(query("SELECT id FROM pages")).rejects.toMatchObject({ status });
       expect(pb.authStore.token).toBe("");
       expect(
         window.localStorage.getItem("wikicontext.reader.auth"),

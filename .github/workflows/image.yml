@@ -7,14 +7,14 @@ on:
 permissions:
   contents: read
 
-# Serialize main releases without cancelling an active deployment. GitHub does not
-# guarantee commit order; explicit current-main checks reject stale reruns.
+# Serialize main releases without cancelling an active deployment.
+# Current-branch checks reject stale reruns; GitHub does not guarantee commit order.
 concurrency:
   group: image-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  IMAGE: ghcr.io/pocketcontext/wikicontext
+  IMAGE: ghcr.io/pocketcontext/wikicontext-demo
 
 jobs:
   # Every branch and pull request: build for the runner's architecture and run the image.
@@ -34,6 +34,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Container entrypoint unit checks
+        run: python3 tests/entrypoint.py
       - name: Build the image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -47,8 +49,23 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
       - name: Show the image
         run: |
-          docker image inspect wikicontext:ci --format '{{.Id}}'
-          docker run --rm --entrypoint sh wikicontext:ci -c 'set -eu; litestream version; pocketcontext --version; cat /app/POCKETCONTEXT_VERSION; find /app /usr/local/bin -type f | sort; test ! -e /app/pb_hooks/.gitkeep'
+          docker image inspect wikicontext:ci --format 'image={{.Id}} architecture={{.Architecture}} revision={{index .Config.Labels "org.opencontainers.image.revision"}}'
+          docker run --rm --entrypoint sh wikicontext:ci -c 'set -eu; litestream version; pocketcontext --version; nginx -v; cat /app/POCKETCONTEXT_VERSION; find /app /usr/local/bin /usr/local/lib/wikicontext-demo -type f -not -path "/app/ui/dist/*" | sort; test ! -e /app/pb_hooks/.gitkeep'
+      - name: Demo lifecycle with the image's server and Litestream
+        run: |
+          container=$(docker create wikicontext:ci)
+          trap 'docker rm -f "$container" >/dev/null' EXIT
+          docker cp "$container:/usr/local/bin/pocketcontext" "$RUNNER_TEMP/pocketcontext-image"
+          docker cp "$container:/usr/local/bin/litestream" "$RUNNER_TEMP/wikicontext-litestream"
+          chmod +x "$RUNNER_TEMP/pocketcontext-image" "$RUNNER_TEMP/wikicontext-litestream"
+          export WIKICONTEXT_TEST_BINARY="$RUNNER_TEMP/pocketcontext-image"
+          export WIKICONTEXT_DEMO_TEST_BINARY="$RUNNER_TEMP/pocketcontext-image"
+          export WIKICONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/wikicontext-litestream"
+          python3 tests/maintenance.py --binary "$WIKICONTEXT_TEST_BINARY"
+          python3 -m unittest discover -s tests -p 'test_demo_*.py'
+          python3 tests/demo_backend.py --binary "$WIKICONTEXT_TEST_BINARY"
+      - name: Native ONCE bootstrap and exclusive volume
+        run: python3 docker/once_smoke.py --image wikicontext:ci
       - name: Startup errors for missing configuration
         run: python3 docker/smoke.py config --image wikicontext:ci
       - name: Smoke test
@@ -65,7 +82,7 @@ jobs:
   # Each architecture is built on its own runner and pushed by digest, under no tag, so that two runs
   # close together cannot mix their halves in one manifest.
   build:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.WIKICONTEXT_DEMO_PUBLISH == 'true'
     needs:
       - check
       - tests
@@ -119,31 +136,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      # Archives contain only the clean, tested container image.
-      # Release access follows repository visibility.
-      - name: Export image archive for release
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-          ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          case "$ARCH" in arm) platform=arm64 ;; amd) platform=amd64 ;; *) exit 1 ;; esac
-          mkdir -p /tmp/images
-          docker pull "$IMAGE@$DIGEST"
-          docker tag "$IMAGE@$DIGEST" "$IMAGE:sha-$GITHUB_SHA"
-          docker save "$IMAGE:sha-$GITHUB_SHA" | gzip > "/tmp/images/wikicontext-linux-$platform.tar.gz"
-          cd /tmp/images
-          sha256sum "wikicontext-linux-$platform.tar.gz" > "wikicontext-linux-$platform.tar.gz.sha256"
-          printf 'Source: %s\nPlatform: linux/%s\nRegistry digest: %s\n' "$GITHUB_SHA" "$platform" "$DIGEST" > "wikicontext-linux-$platform.txt"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-image-${{ matrix.arch }}
-          path: /tmp/images/*
-          if-no-files-found: error
-          retention-days: 1
-
-  # One imagetools call creates the current and source tags from this run.
-  manifest:
+  # Publish the dedicated demo repository after every validation gate.
+  demo_manifest:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.WIKICONTEXT_DEMO_PUBLISH == 'true'
     needs:
       - build
     runs-on: ubuntu-24.04
@@ -151,6 +146,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -163,125 +160,174 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Require current main revision
+      - name: Require current demo revision
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
           if [[ ! "$head" =~ ^[0-9a-f]{40}$ || "$head" != "$GITHUB_SHA" ]]; then
-            echo 'Refusing stale release: workflow revision is not current main.' >&2
+            echo 'Refusing stale demo release: workflow revision is not current main.' >&2
             exit 1
           fi
-      - name: Create and push the manifest list
+      - name: Create and push the demo manifest
+        id: publish
         working-directory: /tmp/digests
         run: |
-          set -- *
-          echo "digests of this run: $*"
-          test "$#" -eq 2
-          sources=""
-          for digest in "$@"; do
-            sources="$sources $IMAGE@sha256:$digest"
-          done
-          # shellcheck disable=SC2086 # one argument per digest
-          docker buildx imagetools create \
-            --tag "$IMAGE:latest" \
-            --tag "$IMAGE:sha-${GITHUB_SHA::7}" \
-            --tag "$IMAGE:sha-$GITHUB_SHA" \
-            $sources
-      - name: Show what was published
-        run: docker buildx imagetools inspect "$IMAGE:latest"
-
-  image-release:
-    # GHCR and repository release visibility are configured independently.
-    needs:
-      - manifest
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: /tmp/images
-          pattern: release-image-*
-          merge-multiple: true
-      - name: Publish verified container archives
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        working-directory: /tmp/images
-        run: |
           set -euo pipefail
-          sha256sum --check ./*.sha256
-          test -f wikicontext-linux-amd64.tar.gz
-          test -f wikicontext-linux-arm64.tar.gz
-          printf '%s\n' \
-            'WikiContext container images for Linux AMD64 and ARM64.' \
-            "Source revision: $GITHUB_SHA" \
-            'Verify the matching SHA-256 file, then use docker load --input on the archive.' \
-            "The loaded image is ghcr.io/pocketcontext/wikicontext:sha-$GITHUB_SHA." \
-            'Release asset access follows repository visibility; GHCR package visibility is configured independently.' \
-            'Application, authentication, complete evidence recovery and container checks passed before publication.' \
-            > "$RUNNER_TEMP/release-notes.md"
-          gh release create "image-$GITHUB_SHA" ./* \
-            --target "$GITHUB_SHA" --title "WikiContext ${GITHUB_SHA:0:7}" \
-            --notes-file "$RUNNER_TEMP/release-notes.md"
+          set -- *
+          test "$#" -eq 2
+          sources=()
+          for digest in "$@"; do
+            if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+              echo 'Invalid platform image digest.' >&2
+              exit 1
+            fi
+            sources+=("$IMAGE@sha256:$digest")
+          done
+          docker buildx imagetools create \
+            --metadata-file "$RUNNER_TEMP/demo-manifest.json" \
+            --tag "$IMAGE:latest" \
+            --tag "$IMAGE:sha-$GITHUB_SHA" \
+            "${sources[@]}"
+          digest=$(jq -er '."containerimage.descriptor".digest' "$RUNNER_TEMP/demo-manifest.json")
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo 'Invalid multi-platform image digest.' >&2
+            exit 1
+          fi
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+          printf 'Demo image: %s@%s\n' "$IMAGE" "$digest" >> "$GITHUB_STEP_SUMMARY"
+      - name: Show the immutable demo image
+        env:
+          PUBLISHED_DIGEST: ${{ steps.publish.outputs.digest }}
+        run: docker buildx imagetools inspect "$IMAGE@$PUBLISHED_DIGEST"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: demo-image-metadata
+          path: ${{ runner.temp }}/demo-manifest.json
+          if-no-files-found: error
+          retention-days: 30
 
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.CONTEXT_DEPLOY_PAUSED != 'true' && vars.COLORS_PROFILE != ''
+  demo_deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.WIKICONTEXT_DEMO_DEPLOY_ENABLED == 'true' && vars.WIKICONTEXT_DEMO_DEPLOY_PAUSED != 'true'
     needs:
-      - manifest
-      - image-release
+      - demo_manifest
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
     environment:
-      name: ${{ vars.COLORS_PROFILE }}
-    # Serialize rather than cancel: interrupting a deploy midway is worse than making the next one wait.
+      name: wikicontext-demo
     concurrency:
-      group: deploy-${{ vars.COLORS_PROFILE }}
+      group: deploy-wikicontext-demo
       cancel-in-progress: false
+    env:
+      DEMO_DIGEST: ${{ needs.demo_manifest.outputs.digest }}
     steps:
-      - name: Require current main revision
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require current demo deployment revision
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
           if [[ ! "$head" =~ ^[0-9a-f]{40}$ || "$head" != "$GITHUB_SHA" ]]; then
-            echo 'Refusing stale release: workflow revision is not current main.' >&2
+            echo 'Refusing stale demo deployment.' >&2
             exit 1
           fi
-      - name: Deploy via SSH
+      - name: Deploy exact demo digest over restricted SSH
         env:
-          # The public package needs only the restricted deployment key.
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SERVER_IP: ${{ vars.SERVER_IP }}
           SERVER_USER: ${{ vars.SERVER_USER }}
           SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh
-          # shellcheck disable=SC2046
-          eval $(ssh-agent -s)
-          echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
-
-          # Pinned by ONCE at provisioning time, not scanned here. Fail closed.
-          if [ -z "$SSH_KNOWN_HOSTS" ]; then
-            echo "SSH_KNOWN_HOSTS is unset; configure the once-pocketcontext-v2 deployment environment" >&2
-            exit 1
-          fi
-          printf '%s\n' "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
-
-          # The fixed shared dispatcher accepts no remote command or registry credentials.
-          # It resolves latest to a digest; the workflow does not attest the live source revision.
+          set -euo pipefail
           test "$SERVER_USER" = deploy
-          ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$SERVER_USER@$SERVER_IP" < /dev/null
-      - name: Verify public health
+          test -n "$SSH_KNOWN_HOSTS"
+          test -n "$SERVER_IP"
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          digest, revision = os.environ['DEMO_DIGEST'], os.environ['GITHUB_SHA']
+          if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest) or not re.fullmatch(r'[0-9a-f]{40}', revision):
+              raise SystemExit('Invalid demo release identity')
+          Path(os.environ['RUNNER_TEMP'], 'demo-request.json').write_text(json.dumps({
+              'image': 'ghcr.io/pocketcontext/wikicontext-demo@' + digest, 'revision': revision}) + '\n')
+          PY
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          eval "$(ssh-agent -s)" >/dev/null
+          trap 'ssh-agent -k >/dev/null 2>&1 || true' EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - >/dev/null 2>&1
+          # The dedicated forced-command key reads a bounded release JSON request.
+          # No remote command, registry credential, shell script or archive is sent.
+          ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
+            "$SERVER_USER@$SERVER_IP" < "$RUNNER_TEMP/demo-request.json" > "$RUNNER_TEMP/demo-receipt.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          raw = Path(os.environ['RUNNER_TEMP'], 'demo-receipt.json').read_bytes()
+          if len(raw) > 4096:
+              raise SystemExit('Invalid demo release receipt')
+          receipt = json.loads(raw)
+          expected = {'ready': True, 'revision': os.environ['GITHUB_SHA'],
+                      'image': 'ghcr.io/pocketcontext/wikicontext-demo@' + os.environ['DEMO_DIGEST']}
+          if receipt != expected or receipt.get('ready') is not True:
+              raise SystemExit('Demo release receipt differs from requested revision and digest')
+          PY
+      - name: Attest demo status, installation and legal pages
         run: |
-          # /up executes a database query, so HTTP 200 also checks database availability.
-          curl --fail --silent --show-error \
-            --connect-timeout 10 --max-time 20 \
-            --retry 12 --retry-delay 5 --retry-max-time 180 --retry-all-errors \
-            https://wiki.pocketcontext.com/up
+          python3 - <<'PY'
+          import hashlib, json, re, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+          origin = 'https://wiki-demo.pocketcontext.com'
+          def fetch(path, limit=4194304):
+              request = Request(origin + path, headers={'User-Agent': 'WikiContext-Demo-Release-Check/1.0'})
+              with urlopen(request, timeout=20) as response:
+                  if response.status != 200 or response.geturl() != origin + path:
+                      raise ValueError('Unexpected public demo response')
+                  body = response.read(limit + 1)
+                  if len(body) > limit:
+                      raise ValueError('Public artifact exceeds limit')
+                  return body
+          def verify():
+              status = json.loads(fetch('/api/demo/status', 32768))
+              day = datetime.now(timezone.utc).date().isoformat()
+              if status.get('enabled') is not True or status.get('clientReady') is not True or status.get('generation') != day:
+                  raise ValueError('Public demo is not ready for the current UTC generation')
+              launcher = Path('skills/wikicontext/wikicontext').read_text()
+              pin = re.search(r'wikicontext-demo\.git", rev = "([0-9a-f]{40})"', launcher).group(1)
+              expected_installation = {'method': 'skills', 'skill': 'wikicontext',
+                  'source': 'https://github.com/pocketcontext/wikicontext-demo/tree/main/skills/wikicontext',
+                  'clientRevision': pin}
+              if status.get('installation') != expected_installation:
+                  raise ValueError('Unexpected public installation contract')
+              for path, name in (('/terms/', 'terms.html'), ('/privacy/', 'privacy.html'), ('/legal/legal.css', 'legal.css')):
+                  if hashlib.sha256(fetch(path)).digest() != hashlib.sha256(Path('legal', name).read_bytes()).digest():
+                      raise ValueError('Public legal pages differ from the workflow revision')
+              if b'<!doctype html>' not in fetch('/').lower():
+                  raise ValueError('Reader root is unavailable')
+              try:
+                  fetch('/api/context/schema')
+              except HTTPError as error:
+                  if error.code not in (401, 403):
+                      raise ValueError('Anonymous SQL schema was not rejected') from None
+              else:
+                  raise ValueError('Anonymous SQL schema is available')
+          for attempt in range(6):
+              try:
+                  verify()
+                  break
+              except Exception:
+                  if attempt == 5:
+                      raise SystemExit('Public demo release attestation failed') from None
+                  time.sleep(5)
+          print('Demo generation, installation contract, legal pages and anonymous SQL rejection verified')
+          PY

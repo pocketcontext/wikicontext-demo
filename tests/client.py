@@ -70,4 +70,30 @@ class Client(unittest.TestCase):
             with self.assertRaises(wc.Fail) as error:wc.run(args)
         self.assertEqual(error.exception.code,4)
         self.assertEqual(request.call_count,1)
+    def test_space_selection(self):
+        space='s'*15
+        self.assertEqual(wc.parse(['--space',space,'lint']).space,space)
+        self.assertEqual(wc.parse(['lint','--space',space]).space,space)
+        self.assertIsNone(wc.parse(['lint']).space)
+        with patch.object(wc.sys,'stderr',io.StringIO()),self.assertRaises(SystemExit):wc.parse(['lint','--space','bad'])
+        with patch.dict(os.environ,{'WIKICONTEXT_URL':'http://127.0.0.1:1','WIKICONTEXT_USER_EMAIL':'a@example.test','WIKICONTEXT_SPACE':'bad'}):
+            with self.assertRaises(wc.Fail) as error:wc.config()
+        self.assertEqual(error.exception.code,2)
+        found={'columns':['id'],'rows':[[space]],'truncated':False}
+        with patch.object(wc,'must',return_value=found) as request:
+            cfg={}
+            self.assertEqual(wc.space_id(cfg),space);self.assertEqual(wc.space_id(cfg),space)
+        self.assertEqual(request.call_count,1)
+        self.assertIn("kind = 'personal'",request.call_args.args[3]['sql'])
+        for rows,selected in [([],'m'*15),([],None),([[space],['t'*15]],None)]:
+            with patch.object(wc,'must',return_value=dict(found,rows=rows)):
+                with self.assertRaises(wc.Fail):wc.space_id({'space':selected})
+    def test_create_scopes_roots_only(self):
+        space='s'*15
+        for collection,expected in [('pages',{'slug':'x','kind':'concept','space':space}),('page_links',{'page_revision':'r'*15,'target':'t'*15})]:
+            body={key:value for key,value in expected.items() if key!='space'}
+            args=wc.parse(['create',collection,json.dumps(body),'--space',space])
+            with patch.object(wc,'config',return_value={}),patch.object(wc,'space_id',return_value=space),patch.object(wc,'must',return_value={}) as request,patch.object(wc,'say'):
+                wc.run(args)
+            self.assertEqual(request.call_args.args[3],expected)
 if __name__=='__main__':unittest.main()

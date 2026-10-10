@@ -22,7 +22,13 @@ function authenticate(e) {
   if (e.record.getBool("disabled")) {
     throw new ForbiddenError("This WikiContext account is disabled.");
   }
-  return e.next();
+  const result = e.next();
+  // Every successfully signed-in account has its personal space. Root writes
+  // without a space also create it, so a failure here is retried later.
+  try {
+    require(`${__hooks}/spaces.js`).ensurePersonalSpace(e.app, e.record.id);
+  } catch (_) {}
+  return result;
 }
 
 function update(e) {

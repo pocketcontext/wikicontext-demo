@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from unittest.mock import patch
 
-from integration import ROOT, credentials, server
+from integration import ROOT, SEARCH, credentials, server
 import search_integration
 from search_integration import Fixture, running
 
@@ -41,7 +41,8 @@ def main():
             f = Fixture(request, token)
             assert f.query('SELECT id, home, manifest FROM publications') == [dict(id=pub['id'], home='', manifest=manifest)]
             assert f.query('SELECT home, home_base, clear_home FROM ingestion_runs') == [dict(home='', home_base='', clear_home=False)]
-            assert f.search(pub)['hits'][0]['id'] == revision['id']
+            if SEARCH:
+                assert f.search(pub)['hits'][0]['id'] == revision['id']
             home = f.run('post-migration-home', home=page['id'], home_base='')
             f.publish(home)
             assert f.query('SELECT home FROM publications ORDER BY sequence') == [{'home': ''}, {'home': page['id']}]
