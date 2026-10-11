@@ -13,8 +13,11 @@ const LIMITS = {
 const COUNTED = {sources: 'sources', renditions: 'renditions', passages: 'passages',
  ingestion_runs: 'runs', pages: 'pages', page_revisions: 'pageRevisions',
  citations: 'citations', page_links: 'pageLinks'};
-// Text bytes cover the large free-text fields; other fields are bounded by count x schema max.
-const TEXT = {passages: ['locator', 'body'], renditions: ['notes'],
+// Text bytes cover caller-controlled prose and metadata, including mutable run text.
+// IDs, fixed enums, generated manifests and audit/database overhead are separate.
+const TEXT = {sources: ['title', 'original_name', 'media_type', 'source_date'],
+ ingestion_runs: ['key', 'description', 'issue'], citations: ['note'], pages: ['slug'],
+ passages: ['locator', 'body'], renditions: ['kind', 'processor', 'version_label', 'notes'],
  page_revisions: ['title', 'summary', 'body', 'properties', 'property_evidence']};
 // Audio and audio-bearing video containers. The demo performs no transcription:
 // there is no server-side Groq use, and client transcripts are rejected below.
@@ -200,8 +203,9 @@ function enroll(e) {
  const contact = contacts('/enroll', {subject: subject(e.app, account), email: account.getString('email'),
   salesContact: body.salesConsent, newsletter: body.newsletterConsent, termsVersion: TERMS, consentVersion: TERMS,
   expectedRevision: body.expectedRevision});
- // Log one successful enrollment per generation, using only PocketBase's
- // canonical peer/trusted-proxy result. Failure leaves wiki access closed.
+ // Record an enrollment attempt using PocketBase's canonical peer/trusted-proxy
+ // result. Consent and this event commit independently of wiki enrollment; neither
+ // proves that the following transaction succeeded. Failure leaves access closed.
  if (!enrollmentRow(e.app, account.id)) contacts('/security', {event: 'enrollment', ip: e.realIP(), timestamp: Math.floor(Date.now() / 1000)});
  let space = '';
  e.app.runInTransaction(app => {
@@ -294,10 +298,17 @@ function recordExecute(e) {
     if (files.some(file => file.size > LIMITS.sourceBytes)) throw new ApiError(413, 'Demo sources are limited to 10 MiB each.', {});
     bump(counters, 'originalBytes', files.reduce((total, file) => total + file.size, 0));
    }
-   if (TEXT[name]) bump(counters, 'textBytes', TEXT[name].reduce((total, field) => total + utf8(record.getString(field)), 0));
   } else if (name === 'ingestion_runs' && record.getString('status') === 'published' &&
              record.original().getString('status') !== 'published') {
    bump(counters, 'publications', 1);
+  }
+  if (TEXT[name]) {
+   // Charge new text and positive growth on updates; shrinking fields never refunds
+   // earlier usage. Status-only publication must not charge unchanged prose again.
+   const previous = fresh ? null : record.original();
+   const added = TEXT[name].reduce((total, field) => total + Math.max(0,
+    utf8(record.getString(field)) - (previous ? utf8(previous.getString(field)) : 0)), 0);
+   bump(counters, 'textBytes', added);
   }
   row.set('usage', counters); e.app.save(row);
  }
@@ -308,15 +319,19 @@ function spaceAdministration(e) {
  return e.next();
 }
 // Exempt only Google sign-in, the caller's own account record and demo routes.
-function exempt(path) {
- return path.startsWith('/api/demo/') || path.startsWith('/api/collections/users/') || path === '/api/oauth2-redirect';
+function exempt(path, method, account) {
+ if (method === 'GET' && ['/api/demo/status', '/api/demo/preferences', '/api/demo/enrollment',
+     '/api/collections/users/auth-methods', '/api/oauth2-redirect'].includes(path)) return true;
+ if (method === 'POST' && ['/api/demo/enroll', '/api/demo/unsubscribe',
+     '/api/collections/users/auth-with-oauth2', '/api/collections/users/auth-refresh'].includes(path)) return true;
+ return method === 'GET' && path === '/api/collections/users/records/' + account;
 }
 function guard(e) {
  if (!enabled()) return e.next();
  // Static pages remain available while all demo API traffic fails closed.
  const path = e.request.url.path;
  if ((path.startsWith('/api/') && path !== '/api/demo/unsubscribe') || path === '/up') current(e.app);
- if (e.auth && e.auth.collection().name === 'users' && path.startsWith('/api/') && !exempt(path)) enrollment(e.app, e.auth.id);
+ if (e.auth && e.auth.collection().name === 'users' && path.startsWith('/api/') && !exempt(path, e.request.method, e.auth.id)) enrollment(e.app, e.auth.id);
  return e.next();
 }
 function realtime(e) {

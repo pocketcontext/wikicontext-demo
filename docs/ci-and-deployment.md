@@ -14,6 +14,8 @@ lifecycle unit suite, backend demo suite and maintenance freeze using the
 image's own PocketContext and Litestream binaries; `docker/once_smoke.py` (control-only
 bootstrap, closed public gate, invalid bindings, exclusive volume, clean stop);
 the required in-image nginx test for Cloudflare IP handling and direct-origin spoof resistance;
+root process isolation tests for child identities, capabilities, private files,
+immutable reset fencing, writer leases, timeout drains and adopted descendants;
 `docker/standard_demo_smoke.py` (standard replacement, populated recovery and fresh initialization);
 and the inherited configuration, smoke and MinIO object-storage recovery gates.
 Application validation includes space roles and revocation, the reader browser
@@ -51,8 +53,10 @@ There is no application-specific host dispatcher or external prepare/commit flow
 ONCE automatic updates and whole-volume backups stay disabled; PocketDeploy owns
 stop-first delivery, and the application supervisor owns upgrades and daily reset.
 
-Public attestation reads the ready runtime revision from `/up`, validates today's
-UTC generation and installation contract against that revision's published launcher,
+Public attestation reads the ready runtime revision from `/up` and requires the
+triggering revision or a descendant verified through GitHub's compare API. A newer
+revision must also be an ancestor of, or equal to, the current `main` commit;
+lookup failures fail attestation. It validates today's UTC generation and installation contract against that revision's published launcher,
 and compares legal pages against that revision's source. It pulls the release's
 `sha-<revision>` image, validates its OCI revision, extracts generated React assets
 without running the image, and compares every served asset byte for byte. It also

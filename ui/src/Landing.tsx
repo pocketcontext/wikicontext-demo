@@ -1,3 +1,4 @@
+import { withdrawalLink } from "./Withdrawal";
 import "./landing.css";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
@@ -282,9 +283,14 @@ function EnrollmentCard(props: LandingProps) {
               <p>You’re enrolled for today’s demo. Your personal wiki is ready.</p>
               <a className="primary-button" href={props.wikiHref} onClick={props.onOpenWiki}>Open your wiki <Arrow /></a>
               {state.unsubscribeToken && (
-                <button type="button" className="link-button" onClick={props.onWithdraw}>
-                  Withdraw both marketing permissions
-                </button>
+                <div>
+                  <button type="button" className="link-button" onClick={props.onWithdraw}>
+                    Withdraw both marketing permissions
+                  </button>
+                  <p>Save this private link before leaving or reloading this page. It works after sign-out and the daily reset. Anyone with it can withdraw both permissions.</p>
+                  <a href={withdrawalLink(state.unsubscribeToken)} target="_blank" rel="noopener noreferrer">Private withdrawal link</a>
+                  <p>Copy the link address to save it. No email is sent.</p>
+                </div>
               )}
             </div>
           ) : (

@@ -71,6 +71,14 @@ jobs:
             -e WIKICONTEXT_TEST_ONCE_RUNTIME=/usr/local/bin/wikicontext-demo-once.py \
             --mount type=bind,src="$PWD/tests/test_demo_proxy_headers.py",dst=/tmp/test_demo_proxy_headers.py,readonly \
             wikicontext:ci /tmp/test_demo_proxy_headers.py
+      - name: Child identity and writer lease isolation
+        run: |
+          docker run --rm --entrypoint python3 \
+            -e WIKICONTEXT_TEST_REQUIRE_PRIVILEGES=true \
+            -e WIKICONTEXT_TEST_ONCE_RUNTIME=/usr/local/bin/wikicontext-demo-once.py \
+            -e WIKICONTEXT_TEST_CHILD_PRIVILEGES=/usr/local/lib/wikicontext-demo/child_privileges.py \
+            --mount type=bind,src="$PWD/tests/test_demo_privileges.py",dst=/tmp/test_demo_privileges.py,readonly \
+            wikicontext:ci /tmp/test_demo_privileges.py
       - name: Native ONCE bootstrap and exclusive volume
         run: python3 docker/once_smoke.py --image wikicontext:ci
       - name: Standard PocketDeploy lifecycle and populated recovery
@@ -282,9 +290,11 @@ jobs:
               raise SystemExit('Invalid PocketDeploy reconciliation receipt')
           PY
       - name: Verify running demo revision, assets and installation
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import hashlib, json, re, subprocess, tempfile, time
+          import hashlib, json, os, re, subprocess, tempfile, time
           from pathlib import Path
           from datetime import datetime, timezone
           from urllib.request import Request, urlopen
@@ -304,6 +314,22 @@ jobs:
               revision = runtime.get('revision', '')
               if runtime.get('ready') is not True or not re.fullmatch(r'[0-9a-f]{40}', revision):
                   raise ValueError('Public demo runtime is not ready')
+              trigger = os.environ['GITHUB_SHA']
+              if not re.fullmatch(r'[0-9a-f]{40}', trigger):
+                  raise ValueError('Invalid triggering revision')
+              if revision != trigger:
+                  # Reconciliation can adopt a newer main image while this job waits.
+                  # Require both ancestry from this release and membership in main.
+                  def github(path, query):
+                      return subprocess.run(['gh', 'api', 'repos/pocketcontext/wikicontext-demo/' + path,
+                          '--jq', query], check=True, capture_output=True, text=True).stdout.strip()
+                  head = github('git/ref/heads/main', '.object.sha')
+                  if not re.fullmatch(r'[0-9a-f]{40}', head):
+                      raise ValueError('Invalid main revision')
+                  if github('compare/' + trigger + '...' + revision, '.status') != 'ahead':
+                      raise ValueError('Running revision does not include this release')
+                  if github('compare/' + revision + '...' + head, '.status') not in ('ahead', 'identical'):
+                      raise ValueError('Running revision is not on main')
               source = 'https://raw.githubusercontent.com/pocketcontext/wikicontext-demo/' + revision
               status = json.loads(fetch('/api/demo/status', 32768))
               day = datetime.now(timezone.utc).date().isoformat()

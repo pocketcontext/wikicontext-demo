@@ -45,6 +45,31 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   await expect(page.getByLabel("Coding-agent setup instructions")).toContainText("reader@example.test");
   await expect(page.getByLabel("Coding-agent setup instructions")).toContainText("wikicontext-demo");
   await expect(page.getByRole("table", { name: "Today’s usage and daily limits" })).toBeVisible();
+  const withdrawalHref = await page.getByRole("link", { name: "Private withdrawal link", exact: true }).getAttribute("href");
+  expect(withdrawalHref).toContain("/#/withdraw/");
+  const privateContext = await context.browser()!.newContext({ viewport: { width: 375, height: 812 } });
+  const withdrawalPage = await privateContext.newPage();
+  const withdrawalRequests: string[] = [];
+  withdrawalPage.on("request", request => {
+    if (request.url().endsWith("/api/demo/unsubscribe")) {
+      withdrawalRequests.push(request.method());
+      expect(request.headers().authorization).toBeUndefined();
+    }
+  });
+  await withdrawalPage.goto(withdrawalHref!);
+  await expect(withdrawalPage.getByRole("heading", { name: "Withdraw marketing permissions" })).toBeVisible();
+  expect(new URL(withdrawalPage.url()).hash).toBe("#/withdraw");
+  expect(withdrawalRequests).toEqual([]);
+  expect(await withdrawalPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await withdrawalPage.keyboard.press("Tab");
+  await expect(withdrawalPage.getByRole("button", { name: "Withdraw both marketing permissions" })).toBeFocused();
+  await withdrawalPage.keyboard.press("Enter");
+  await expect(withdrawalPage.getByRole("status")).toContainText("Both marketing permissions withdrawn");
+  expect(withdrawalRequests).toEqual(["POST"]);
+  await withdrawalPage.reload();
+  await expect(withdrawalPage.getByRole("status")).toContainText("This withdrawal link is incomplete");
+  await expect(withdrawalPage.getByRole("button")).toBeDisabled();
+  await privateContext.close();
   await page.getByRole("link", { name: "Open your wiki" }).click();
   await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Space", exact: true })).toHaveCount(0);

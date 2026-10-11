@@ -64,12 +64,8 @@ class ProxyHeaders(unittest.TestCase):
         backend.execute = lambda *_: None
         backend.gate(True)
         config = (root / 'control/nginx.conf').read_text()
-        config = config.replace('/tmp/wikicontext-demo-nginx.pid', str(root / 'nginx.pid'))
         config = config.replace('listen 80;', f'listen 127.0.0.1:{cls.port};')
         config = config.replace('127.0.0.1:8081', f'127.0.0.1:{cls.echo.server_port}')
-        config = config.replace('/tmp/client', str(root / 'client')).replace('/tmp/proxy', str(root / 'proxy'))
-        for kind in ('fastcgi', 'uwsgi', 'scgi'):
-            config = config.replace('/tmp/' + kind, str(root / kind))
         path = root / 'nginx.conf'
         path.write_text(config)
         check = subprocess.run([nginx, '-p', str(root), '-c', str(path), '-t'], capture_output=True, text=True)
@@ -92,10 +88,10 @@ class ProxyHeaders(unittest.TestCase):
         else:
             raise RuntimeError('synthetic nginx did not start')
 
-    def fetch(self, headers):
+    def fetch(self, headers, path='/'):
         conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=3)
         try:
-            conn.putrequest('GET', '/')
+            conn.putrequest('GET', path)
             for key, value in headers:
                 conn.putheader(key, value)
             conn.endheaders()
@@ -120,6 +116,38 @@ class ProxyHeaders(unittest.TestCase):
             with self.subTest(cf=cf):
                 self.assert_identity('198.51.100.20', cf, '198.51.100.20')
                 self.assert_identity('2001:db8::20', cf, '2001:db8::20')
+
+    def test_public_administration_routes_are_not_proxied(self):
+        for path in ('/_', '/_/', '/_/index.html', '/%5f/',
+                     '/api/collections/_superusers',
+                     '/api/collections/_superusers/auth-methods',
+                     '/api/collections/_superusers/auth-with-password',
+                     '/api/collections/%5fsuperusers/records?perPage=1',
+                     '/api/collections/pbc_3142635823',
+                     '/api/collections/pbc_3142635823/auth-methods',
+                     '/api/collections/pbc_3142635823/auth-with-password'):
+            with self.subTest(path=path):
+                self.assertEqual(self.fetch([], path)[0], 404)
+        self.assertEqual(self.fetch([], '/api/collections/users/auth-methods')[0], 200)
+
+    def test_ingress_refuses_symlink_and_shared_writable_directory(self):
+        with tempfile.TemporaryDirectory(prefix='wiki-ingress-fixture-') as temporary:
+            root = Path(temporary)
+            (root / 'control').mkdir()
+            target = root / 'untrusted'
+            target.mkdir()
+            ingress = root / 'ingress'
+            backend = self.runtime.Backend(root, 'https://synthetic.invalid')
+            backend.stop = lambda *_: None
+            backend.execute = lambda *_: self.fail('unsafe path reached nginx')
+            ingress.symlink_to(target, target_is_directory=True)
+            with self.assertRaises(self.runtime.RuntimeErrorSafe):
+                backend.gate(True)
+            ingress.unlink()
+            ingress.mkdir()
+            ingress.chmod(0o777)
+            with self.assertRaises(self.runtime.RuntimeErrorSafe):
+                backend.gate(True)
 
     def test_non_cloudflare_boundary_and_unspecified_addresses_remain_untrusted(self):
         for peer in ('173.245.47.255', '173.245.64.0', '0.0.0.0', '::'):

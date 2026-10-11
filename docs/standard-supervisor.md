@@ -13,10 +13,28 @@ failures report fixed diagnostics rather than credentials or child output.
 
 The worker in `deploy/demo/once_runtime.py` retains database, contact, replication
 and UTC-reset mechanics. It holds the exclusive volume lock for its lifetime;
-the directly managed application and contact supervisors inherit that lock. Three databases and existing volume layout stay
+root guardians inherit that lock and forward termination to their unprivileged
+application and contact children. Children cannot access or unlock the lease;
+ingress receives no lease descriptor. Guardians reap adopted descendants before
+exiting, and timed-out operations retain their guardian until the child drains.
+Three databases and existing volume layout stay
 unchanged: disposable `runtime/pb_data/data.db` and `auxiliary.db`, retained
 `persistent/contacts.db`, and private durable `control/` state. The Go wrapper does
 not replace Litestream or the tested Python storage helpers.
+
+The root controller assigns separate fixed identities: application UID/GID 10001
+owns private `runtime/`, and contacts UID/GID 10002 owns private `persistent/`.
+Children have no supplementary groups or Linux capabilities and cannot gain
+privilege through executable file attributes. Root-owned `control/` grants only
+application-group traversal: its configuration, journals and socket remain private.
+Only the root-owned reset marker is group-readable; children cannot replace or
+modify it. Application Litestream configuration and IPC live in `runtime/run/`.
+Stopped-volume migration checks each entry through descriptor-relative traversal
+that refuses symlinks, hard links and unexpected file types before changing that
+entry's ownership. Database bytes are preserved. Controller/ingress still require root.
+This separates process and filesystem identities within one container; it is not a
+container or kernel isolation boundary, and the application retains its authorized
+contact-service API token.
 
 ## Startup and upgrades
 
@@ -69,6 +87,20 @@ contains `ready: true` and the baked application `revision`. Unconfigured, fence
 stopping and stale-generation states are not ready. Other public routes remain
 closed until the worker has completed verification. A process merely being alive
 is insufficient for deployment success.
+
+The worker probes application and contact readiness every two seconds after the
+previous probe completes. A successful probe clears the failure count. Three
+consecutive failures close ingress, drain both writers and terminate the worker
+with a failed exit so the container restart policy can run normal startup. A
+failed probe does not leave a live, permanently blocked reset scheduler. The UTC
+generation is checked on every scheduler tick and again after each probe; a
+probe crossing midnight takes the reset path immediately. Release, adoption and
+upgrade fences retain their existing operator-review requirements. Verify the
+container restart policy during rollout and observe the next real midnight reset
+after deployment; record that live evidence separately from synthetic tests.
+
+The public gate returns 404 for the PocketBase administration UI and named
+superuser collection routes. Operator maintenance uses the private control path.
 
 On termination, Go stops reporting ready and asks the worker to drain. The worker
 closes public ingress and gracefully stops application and contact processes,

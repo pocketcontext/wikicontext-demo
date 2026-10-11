@@ -72,7 +72,9 @@ FROM debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e4
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tini python3 python3-boto3 nginx \
     && rm -rf /var/lib/apt/lists/* \
-    && test -x /usr/bin/tini
+    && test -x /usr/bin/tini \
+    && groupadd --gid 10001 demo-app && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin demo-app \
+    && groupadd --gid 10002 demo-contacts && useradd --uid 10002 --gid 10002 --no-create-home --shell /usr/sbin/nologin demo-contacts
 
 COPY --from=build /out/pocketcontext /out/litestream /out/demo-supervisor /usr/local/bin/
 COPY docker/litestream.yml /etc/litestream.yml
@@ -83,6 +85,7 @@ COPY --chmod=0755 deploy/demo/once_runtime.py /usr/local/bin/wikicontext-demo-on
 COPY deploy/demo/verify_compatibility.py /usr/local/lib/wikicontext-demo/verify_compatibility.py
 COPY deploy/demo/compatibility.json /usr/local/share/wikicontext-compatibility.json
 COPY deploy/demo/reset.py /usr/local/lib/wikicontext-demo/reset.py
+COPY deploy/demo/child_privileges.py /usr/local/lib/wikicontext-demo/child_privileges.py
 COPY deploy/demo/contact-litestream.yml /etc/wikicontext-demo-contacts-litestream.yml
 WORKDIR /app
 COPY POCKETCONTEXT_VERSION pocketcontext.json ./
@@ -95,8 +98,9 @@ COPY legal/ ./legal/
 # Read only as the installation contract's tested client pin; never executed by the server.
 COPY skills/wikicontext/wikicontext ./skills/wikicontext/wikicontext
 
-# The container runs as root. ONCE creates and mounts the /storage volume and offers no option to
-# set its owner or the container's user, and the server binds port 80.
+# The controller and ingress master run as root for volume ownership and port 80.
+# ONCE application and contact children use separate unprivileged identities;
+# only their root guardians inherit the exclusive writer lease.
 ENV WIKICONTEXT_RATE_LIMITS=true
 VOLUME /storage
 EXPOSE 80

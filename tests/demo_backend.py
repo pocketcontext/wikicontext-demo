@@ -83,9 +83,23 @@ def main():
 
     with fx.contacts() as (contact_url, contact_token, store), google_fixture() as (provider_url, codes), \
             fx.app_tree(launcher=fx.demo_launcher()) as app:
+        # Inject a server-side enrollment failure only for this synthetic identity.
+        # The real contact service commits first, exposing the cross-service boundary.
+        (app / 'pb_hooks/synthetic_enrollment_failure.pb.js').write_text('''
+onRecordCreate((e) => {
+ const account = e.app.findRecordById('users', e.record.getString('account'));
+ if (account.getString('email') === 'partial@example.test')
+  throw new ApiError(503, 'Synthetic enrollment failure', {});
+ return e.next();
+}, 'demo_enrollments');
+''')
         env = {**environment(contact_url, contact_token, day), 'WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN': 'company.example'}
         with fx.server(args.binary, app, env) as request:
-            admin = request('POST', '/api/collections/_superusers/auth-with-password', ADMIN)['token']
+            admin_auth = request('POST', '/api/collections/_superusers/auth-with-password', ADMIN)
+            # Public nginx denies the system collection by name and this pinned ID.
+            # Fail when an adopted server changes it so the gate cannot silently drift.
+            assert admin_auth['record']['collectionId'] == 'pbc_3142635823'
+            admin = admin_auth['token']
             provider = {'name': 'google', 'clientId': 'synthetic-client', 'clientSecret': 'synthetic-secret',
                         'authURL': provider_url + '/authorize', 'tokenURL': provider_url + '/token',
                         'userInfoURL': provider_url + '/userinfo'}
@@ -132,12 +146,32 @@ def main():
             assert request('GET', '/api/demo/enrollment', token=at) == {
                 'enrolled': False, 'generation': day, 'termsVersion': status['termsVersion'], 'space': None, 'usage': None}
             request('GET', '/api/demo/enrollment', expected=401)
+            request('GET', RECORDS('users') + '/' + alice['record']['id'], token=at)
+            request('GET', RECORDS('users') + '/' + bob['record']['id'], token=at, expected=403)
+            request('GET', RECORDS('users'), token=at, expected=403)
+            request('PATCH', RECORDS('users') + '/' + alice['record']['id'], {'name': 'No'}, at, 403)
+            request('POST', '/api/collections/users/auth-refresh', {}, at)
+
 
             enroll = {'generation': day, 'termsVersion': status['termsVersion'], 'acceptTerms': True,
                       'salesConsent': False, 'newsletterConsent': False, 'expectedRevision': 0}
             for bad in ({'acceptTerms': False}, {'generation': '2000-01-01'}, {'termsVersion': 'old'},
                         {'salesConsent': None}, {'expectedRevision': -1}):
                 request('POST', '/api/demo/enroll', {**enroll, **bad}, at, 400)
+            partial = exchange('partial@example.test')
+            pt = partial['token']
+            request('POST', '/api/demo/enroll', {**enroll, 'salesConsent': True}, pt, 503)
+            assert request('GET', '/api/demo/enrollment', token=pt)['enrolled'] is False
+            prefs = request('GET', '/api/demo/preferences', token=pt)
+            assert prefs['revision'] == 1 and prefs['salesContact'] is True and prefs['newsletter'] is False, prefs
+            request('POST', '/api/context/query', {'sql': 'SELECT 1'}, pt, 403)
+            # An old revision cannot overwrite the already recorded explicit choice.
+            request('POST', '/api/demo/enroll', enroll, pt, 409)
+            # A fresh explicit withdrawal commits even though wiki enrollment still fails.
+            request('POST', '/api/demo/enroll', {**enroll, 'expectedRevision': prefs['revision']}, pt, 503)
+            prefs = request('GET', '/api/demo/preferences', token=pt)
+            assert prefs['revision'] == 2 and prefs['salesContact'] is False and prefs['newsletter'] is False, prefs
+            assert request('GET', '/api/demo/enrollment', token=pt)['enrolled'] is False
             spaces = {}
             for token, user in ((at, alice), (bt, bob)):
                 assert request('GET', '/api/demo/preferences', token=token)['revision'] == 0
@@ -181,14 +215,14 @@ def main():
             for kind, processor in (('transcript', 'synthetic'), ('text', 'groq whisper-large-v3-turbo'), ('text', 'Synthetic transcription')):
                 create(at, 'renditions', {'source': source['id'], 'kind': kind, 'processor': processor, 'version_label': 'v1'}, 400)
             rendition = create(at, 'renditions', {'source': source['id'], 'kind': 'text', 'processor': 'synthetic', 'version_label': 'v1'})
-            create(at, 'passages', {'rendition': rendition['id'], 'ordinal': 1, 'locator': 'line 1', 'body': 'Synthetic passage é'})
+            passage = create(at, 'passages', {'rendition': rendition['id'], 'ordinal': 1, 'locator': 'line 1', 'body': 'Synthetic passage é'})
 
             enrollments = request('GET', RECORDS('demo_enrollments'), token=admin)['items']
             row = next(item for item in enrollments if item['account'] == alice['record']['id'])
             usage_path = RECORDS('demo_enrollments') + '/' + row['id']
             usage = row['usage']
             assert usage == {'writes': 4, 'pages': 1, 'sources': 1, 'originalBytes': len(b'synthetic alpha'), 'renditions': 1,
-                             'passages': 1, 'textBytes': len('line 1') + len('Synthetic passage é'.encode()) + len('')}, usage
+                             'passages': 1, 'textBytes': len(('synthetic-alphaSynthetic textalpha.txttext/plaintextsyntheticv1line 1Synthetic passage é').encode())}, usage
 
             def set_usage(**changes):
                 request('PATCH', usage_path, {'usage': {**usage, **changes}}, admin)
@@ -225,9 +259,29 @@ def main():
             request('POST', RECORDS('sources'), body, at, expected=(400, 413), headers=headers)
             set_usage(textBytes=limits['textBytes'] - 5)
             create(at, 'passages', {'rendition': rendition['id'], 'ordinal': 2, 'locator': 'l2', 'body': 'too long'}, 429)
+            # Metadata participates in the same quota, including UTF-8 and run updates.
+            create(at, 'ingestion_runs', {'key': 'metadata-over', 'status': 'staging', 'description': '界界'}, 429)
+            set_usage(textBytes=0)
+            editable = create(at, 'ingestion_runs', {'key': 'editable', 'status': 'staging', 'description': 'x'})
+            set_usage(textBytes=limits['textBytes'] - 5)
+            before = stored()
+            request('PATCH', RECORDS('ingestion_runs') + '/' + editable['id'],
+                    {'expected_revision': 1, 'issue': '界界'}, at, 429)
+            assert stored() == before, 'failed metadata growth must roll back counters'
+            request('PATCH', RECORDS('ingestion_runs') + '/' + editable['id'],
+                    {'expected_revision': 1, 'issue': 'é'}, at)
+            assert stored()['textBytes'] == before['textBytes'] + 2
+            request('PATCH', RECORDS('ingestion_runs') + '/' + editable['id'],
+                    {'expected_revision': 2, 'issue': ''}, at)
+            assert stored()['textBytes'] == before['textBytes'] + 2, 'shrinking metadata must not refund usage'
             set_usage(textBytes=0, publications=limits['publications'])
             run = create(at, 'ingestion_runs', {'key': 'synthetic-run', 'status': 'staging', 'description': 'Synthetic'})
-            create(at, 'page_revisions', {'run': run['id'], 'page': page['id'], 'title': 'Alpha', 'summary': 'Synthetic', 'body': 'Synthetic claim [needs verification].'})
+            revision = create(at, 'page_revisions', {'run': run['id'], 'page': page['id'], 'title': 'Alpha', 'summary': 'Synthetic', 'body': 'Synthetic claim [needs verification].'})
+            set_usage(textBytes=limits['textBytes'] - 5, publications=limits['publications'])
+            before = stored()
+            create(at, 'citations', {'page_revision': revision['id'], 'passage': passage['id'], 'marker': '1', 'note': '界界'}, 429)
+            assert stored() == before, 'citation-note quota refusal must roll back counters'
+            set_usage(textBytes=0, publications=limits['publications'])
             request('PATCH', RECORDS('ingestion_runs') + '/' + run['id'], {'expected_revision': 1, 'status': 'published'}, at, 429)
             assert query(at, "SELECT status FROM ingestion_runs WHERE key = 'synthetic-run'") == [['staging']]
             set_usage(publications=0, textBytes=0, writes=0)

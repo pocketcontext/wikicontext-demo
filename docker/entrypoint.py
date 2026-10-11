@@ -29,8 +29,8 @@ SERVER = '/usr/local/bin/pocketcontext'
 LITESTREAM = '/usr/local/bin/litestream'
 SELF = '/usr/local/bin/wikicontext-entrypoint.py'
 CONFIG = '/etc/litestream.yml'
-DEMO_CONFIG = '/run/wikicontext-demo-litestream.yml'
-SOCKET = '/run/litestream.sock'
+DEMO_CONFIG = str(DATA.parent / 'run/litestream.yml') if ONCE_CHILD else '/run/wikicontext-demo-litestream.yml'
+SOCKET = str(DATA.parent / 'run/litestream.sock') if ONCE_CHILD else '/run/litestream.sock'
 S3_FIELDS = {'bucket': 'BUCKET', 'endpoint': 'ENDPOINT', 'region': 'REGION',
              'accessKey': 'ACCESS_KEY_ID', 'secret': 'SECRET_ACCESS_KEY'}
 
@@ -72,7 +72,8 @@ def demo_fence(mode):
         info = marker.stat()
     except FileNotFoundError:
         return
-    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_size > 4096:
+    private = (info.st_uid == 0 and info.st_gid == 10001 and stat.S_IMODE(info.st_mode) == 0o640) if ONCE_CHILD else not info.st_mode & 0o077
+    if not stat.S_ISREG(info.st_mode) or not private or info.st_size > 4096:
         raise StartupError('unsafe demo reset fence')
     try:
         state = json.loads(marker.read_text())
@@ -194,7 +195,7 @@ def configure_replication():
         try:
             template = Path(CONFIG).read_text()
             if ONCE_CHILD:
-                template = template.replace('/storage/pb_data/data.db', str(DATA / 'data.db'))
+                template = template.replace('/storage/pb_data/data.db', str(DATA / 'data.db')).replace('/run/litestream.sock', SOCKET)
             stream.write(template + addition)
             stream.flush()
             os.fsync(stream.fileno())

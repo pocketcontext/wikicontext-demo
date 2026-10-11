@@ -154,13 +154,77 @@ class Backend:
         self.entrypoint='/usr/local/bin/wikicontext-entrypoint.py'
         self.contacts='/usr/local/bin/wikicontext-demo-contact-replica.py'
         self.nginx='/usr/sbin/nginx'
+        self.privileges='/usr/local/lib/wikicontext-demo/child_privileges.py'
     def configure(self,bindings):self.bindings=dict(bindings)
+    def child_command(self,args,env):
+        identity=(env or {}).get('WIKICONTEXT_DEMO_ONCE_CHILD')
+        return [sys.executable,'-I',self.privileges,identity,*args] if identity in ('app','contacts') else args
+    def prepare_storage(self,identity):
+        if os.getuid()!=0:raise RuntimeErrorSafe('root storage controller required')
+        if any(name.startswith(identity) and process.poll() is None for name,process in self.processes.items()):
+            raise RuntimeErrorSafe('child must stop before storage ownership changes')
+        uid={'app':10001,'contacts':10002}[identity]
+        tree=self.root/('runtime' if identity=='app' else 'persistent')
+        def owned(info,directory=False):
+            if info.st_uid not in (0,uid) or (not directory and info.st_nlink!=1):
+                raise RuntimeErrorSafe('unsafe child storage ownership')
+        def migrate(directory):
+            info=os.fstat(directory);owned(info,True)
+            for name in os.listdir(directory):
+                info=os.stat(name,dir_fd=directory,follow_symlinks=False)
+                if stat.S_ISSOCK(info.st_mode):
+                    owned(info);os.unlink(name,dir_fd=directory);continue
+                if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+                    raise RuntimeErrorSafe('unsafe child storage file type')
+                flags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK
+                if stat.S_ISDIR(info.st_mode):flags|=os.O_DIRECTORY
+                fd=os.open(name,flags,dir_fd=directory)
+                try:
+                    current=os.fstat(fd)
+                    if (current.st_dev,current.st_ino)!=(info.st_dev,info.st_ino):
+                        raise RuntimeErrorSafe('child storage changed during migration')
+                    if stat.S_ISDIR(current.st_mode):migrate(fd)
+                    else:
+                        owned(current);os.fchown(fd,uid,uid);os.fchmod(fd,0o600)
+                finally:os.close(fd)
+            os.fchown(directory,uid,uid);os.fchmod(directory,0o700)
+        # Descriptor-relative traversal never follows a child-controlled symlink.
+        fd=os.open(tree,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try:
+            if identity=='app':
+                try:os.mkdir('run',mode=0o700,dir_fd=fd)
+                except FileExistsError:pass
+            migrate(fd)
+        finally:os.close(fd)
+        self.root.chmod(0o711)
+        if identity=='app':
+            control=self.root/'control'
+            os.chown(control,0,uid);control.chmod(0o710)
+    def app_fence(self,value):
+        path=self.root/'control/reset-pending.json'
+        atomic(path,value)
+        os.chown(path,0,10001);path.chmod(0o640)
     def execute(self,args,env=None,timeout=600):
-        result=subprocess.run(args,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=timeout,pass_fds=(() if self.lease is None else (self.lease,)))
-        if result.returncode:raise RuntimeErrorSafe('child operation failed')
+        identity=(env or {}).get('WIKICONTEXT_DEMO_ONCE_CHILD')
+        if identity in ('app','contacts'):
+            name=identity+'-operation'
+            self.launch(name,args,env)
+            process=self.processes[name]
+            try:code=process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                # subprocess.run would kill only the lease guardian. Drain the
+                # actual child, retaining the tracked guardian/lease if it stalls.
+                self.stop(name)
+                raise RuntimeErrorSafe('child operation timed out') from None
+            self.processes.pop(name,None)
+        else:
+            code=subprocess.run(args,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=timeout).returncode
+        if code:raise RuntimeErrorSafe('child operation failed')
     def launch(self,name,args,env):
         if name in self.processes and self.processes[name].poll() is None:raise RuntimeErrorSafe('child already running')
-        self.processes[name]=subprocess.Popen(args,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,pass_fds=(() if self.lease is None else (self.lease,)))
+        isolated=env.get('WIKICONTEXT_DEMO_ONCE_CHILD') in ('app','contacts')
+        args=self.child_command(args,env)
+        self.processes[name]=subprocess.Popen(args,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,pass_fds=((self.lease,) if isolated and self.lease is not None else ()))
     def stop(self,name):
         process=self.processes.get(name)
         if process is None:return
@@ -170,25 +234,27 @@ class Backend:
         self.processes.pop(name,None)
         if code not in (0,-signal.SIGTERM):raise RuntimeErrorSafe('child did not exit cleanly')
     def app_env(self,day):
-        env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':'/root',**{k:v for k,v in self.bindings.items() if not k.startswith('CONTACTS_LITESTREAM_')}}
+        env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':str(self.root/'runtime'),**{k:v for k,v in self.bindings.items() if not k.startswith('CONTACTS_LITESTREAM_')}}
         env.update(WIKICONTEXT_DEMO_MODE='true',WIKICONTEXT_DEMO_ONCE='true',WIKICONTEXT_DEMO_ONCE_CHILD='app',
                    WIKICONTEXT_DEMO_ONCE_ROOT=str(self.root),WIKICONTEXT_DEMO_GENERATION=day,
                    WIKICONTEXT_DEMO_RESET_FENCE=str(self.root/'control/reset-pending.json'),BASE_URL=self.origin,
                    WIKICONTEXT_DEMO_CONTACT_URL='http://127.0.0.1:8781',WIKICONTEXT_TRUSTED_PROXY_HEADER='X-Forwarded-For')
         return env
     def start_app(self,day,initialize=False):
+        self.prepare_storage('app')
         env=self.app_env(day)
         if initialize:
-            atomic(self.root/'control/reset-pending.json',{'deployment':'wikicontext-demo','generation':day,'phase':'purged'})
+            self.app_fence({'deployment':'wikicontext-demo','generation':day,'phase':'purged'})
             env['WIKICONTEXT_DEMO_RESET_PHASE']='initialize'
             self.execute([sys.executable,self.entrypoint,'init'],env)
-            atomic(self.root/'control/reset-pending.json',{'deployment':'wikicontext-demo','generation':day,'phase':'initialized'})
+            self.app_fence({'deployment':'wikicontext-demo','generation':day,'phase':'initialized'})
             env['WIKICONTEXT_DEMO_RESET_PHASE']='start'
         self.launch('app',[sys.executable,self.entrypoint],env)
     def stop_app(self):self.stop('app')
     def start_contacts(self,initialize=False):
         if 'contacts' in self.processes and self.processes['contacts'].poll() is None:return
-        env={'WIKICONTEXT_DEMO_ONCE_CHILD':'contacts','PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':'/root',**{k:v for k,v in self.bindings.items() if k.startswith('CONTACTS_LITESTREAM_') or k=='WIKICONTEXT_DEMO_CONTACT_TOKEN'}}
+        self.prepare_storage('contacts')
+        env={'WIKICONTEXT_DEMO_ONCE_CHILD':'contacts','PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':str(self.root/'persistent'),**{k:v for k,v in self.bindings.items() if k.startswith('CONTACTS_LITESTREAM_') or k=='WIKICONTEXT_DEMO_CONTACT_TOKEN'}}
         args=[sys.executable,self.contacts,'--database',str(self.root/'persistent/contacts.db')]
         if initialize:self.execute(args+['init'],env)
         self.launch('contacts',args+['start'],env)
@@ -204,20 +270,35 @@ class Backend:
         except Exception:return False
     def gate(self,opened):
         self.stop('gate')
+        # Application children can write /tmp. Keep the root master's PID and
+        # worker temporary paths beneath a controller-owned directory instead.
+        ingress=self.root/'ingress'
+        ingress.mkdir(mode=0o755,exist_ok=True)
+        info=ingress.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid() or info.st_mode & 0o022:
+            raise RuntimeErrorSafe('unsafe ingress directory')
+        ingress.chmod(0o755)
         route='''location / { if ($demo_reject_ip) { return 400; }
 proxy_pass http://127.0.0.1:8081; proxy_http_version 1.1;
 proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https;
 proxy_set_header X-Forwarded-For $demo_client_ip;
 proxy_set_header CF-Connecting-IP ""; proxy_set_header X-Real-IP ""; proxy_set_header Connection "";
 proxy_buffering off; proxy_request_buffering off; proxy_read_timeout 300s; }''' if opened else 'location / { return 503; }'
-        config='''pid /tmp/wikicontext-demo-nginx.pid;
+        config='''pid INGRESS/nginx.pid;
 error_log /dev/null; events { worker_connections 1024; }
-http { access_log off; client_body_temp_path /tmp/client; proxy_temp_path /tmp/proxy;
-fastcgi_temp_path /tmp/fastcgi; uwsgi_temp_path /tmp/uwsgi; scgi_temp_path /tmp/scgi;
+http { access_log off; client_body_temp_path INGRESS/client; proxy_temp_path INGRESS/proxy;
+fastcgi_temp_path INGRESS/fastcgi; uwsgi_temp_path INGRESS/uwsgi; scgi_temp_path INGRESS/scgi;
 '''+proxy_header_config()+'''
 server { listen 80; absolute_redirect off; client_max_body_size 12m;
 location = /up { add_header Cache-Control "no-store" always; proxy_pass http://127.0.0.1:8782/ready; }
+location = /_ { return 404; }
+location ^~ /_/ { return 404; }
+location = /api/collections/_superusers { return 404; }
+location ^~ /api/collections/_superusers/ { return 404; }
+location = /api/collections/pbc_3142635823 { return 404; }
+location ^~ /api/collections/pbc_3142635823/ { return 404; }
 '''+route+'\n} }\n'
+        config=config.replace('INGRESS/',str(ingress)+'/')
         path=self.root/'control/nginx.conf';path.write_text(config);path.chmod(0o600)
         env={'PATH':'/usr/sbin:/usr/bin:/bin'}
         self.execute([self.nginx,'-t','-c',str(path)],env,30)
@@ -247,10 +328,10 @@ location = /up { add_header Cache-Control "no-store" always; proxy_pass http://1
                 if value is None:os.environ.pop(key,None)
                 else:os.environ[key]=value
     def maintain_contacts(self):
-        self.execute([sys.executable,'/usr/local/bin/wikicontext-demo-retention.py','--database',str(self.root/'persistent/contacts.db'),'--maintenance'])
+        self.execute([sys.executable,'/usr/local/bin/wikicontext-demo-retention.py','--database',str(self.root/'persistent/contacts.db'),'--maintenance'],{'PATH':'/usr/bin:/bin','WIKICONTEXT_DEMO_ONCE_CHILD':'contacts'})
     def close(self):
         errors=[]
-        for name in ('gate','app','contacts'):
+        for name in dict.fromkeys(('gate','app','contacts',*self.processes)):
             try:self.stop(name)
             except Exception:errors.append(name)
         if errors:raise RuntimeErrorSafe('children failed to drain')
@@ -262,6 +343,7 @@ class Runtime:
         self.compatibility=compatibility
         self.control=self.root/'control';self.pending=self.control/'release-pending.json';self.state_file=self.control/'state.json'
         self.ready=False;self.phase='unconfigured';self.generation=None;self.image=None;self.bindings=None;self.lock=None
+        self.health_failures=0;self.next_health=0.;self.monotonic=time.monotonic
         self.mutex=threading.RLock();self.stop_event=threading.Event();self.on_locked=None;self.minute=lambda:datetime.now(timezone.utc).hour*60+datetime.now(timezone.utc).minute
     def paths(self):return [self.root/'runtime/pb_data/data.db',self.root/'runtime/pb_data/auxiliary.db',self.root/'persistent/contacts.db']
     def persist(self):
@@ -408,6 +490,7 @@ class Runtime:
         self.policy_valid();self.persist()
         if (self.control/'upgrade-pending.json').exists():return
         self.backend.gate(True);self.date_valid();self.ready=True;self.phase='active'
+        self.health_failures=0;self.next_health=0.
     def initialize(self):
         with self.mutex:
             self.configured()
@@ -503,7 +586,21 @@ class Runtime:
     def tick(self):
         with self.mutex:
             if self.ready and self.generation!=self.clock():self.reset_day()
-            elif self.ready and not self.backend.healthy():self.drain();self.phase='blocked'
+            elif self.ready and self.monotonic()>=self.next_health:
+                healthy=self.backend.healthy()
+                self.next_health=self.monotonic()+2.
+                # A probe can straddle midnight. Expiration is a reset, not an
+                # unhealthy same-day writer; check again after both HTTP calls.
+                if self.generation!=self.clock():self.reset_day()
+                elif healthy:self.health_failures=0
+                else:
+                    self.health_failures+=1
+                    if self.health_failures>=3:
+                        self.drain();self.phase='blocked'
+                        # Terminate instead of leaving a live but permanently
+                        # blocked scheduler. Normal startup preserves all fences
+                        # and resets an expired generation before opening ingress.
+                        raise RuntimeErrorSafe('repeated readiness failures require runtime restart')
             if self.ready and self.minute()>=5 and not self.pending.exists():
                 marker=self.control/'maintenance.json'
                 if not marker.exists() or private_json(marker).get('generation')!=self.generation:

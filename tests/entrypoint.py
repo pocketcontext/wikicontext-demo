@@ -89,6 +89,11 @@ class RuntimeTests(unittest.TestCase):
             with patch.dict(os.environ, {name: 'synthetic'}), self.assertRaises(runtime.StartupError):
                 runtime.validate_config()
 
+    def test_once_child_keeps_private_app_owned_maintenance_marker(self):
+        self.marker({'readOnly': True, 'generation': 1})
+        with patch.object(runtime, 'ONCE_CHILD', True):
+            self.assertTrue(runtime.maintenance_state(self.data))
+
     def test_absent_and_valid_maintenance_state(self):
         self.assertFalse(runtime.maintenance_state(self.data))
         for frozen in (False, True):

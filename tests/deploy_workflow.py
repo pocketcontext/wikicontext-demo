@@ -87,9 +87,9 @@ class DeploymentTests(unittest.TestCase):
         origin='https://wiki-demo.pocketcontext.com'
         pin='c'*40
         launcher='wikicontext-client = { git = "https://github.com/pocketcontext/wikicontext-demo.git", rev = "'+pin+'" }\n'
-        for mode in ('success','generation','legal','asset','pin','foreign','unready','sql','root','revision','changed','redirect','image_revision','pull'):
+        for mode in ('success','generation','legal','asset','pin','foreign','unready','sql','root','revision','changed','redirect','image_revision','pull','exact','older','diverged','off_main','main_lookup','compare_lookup','bad_head','bad_trigger','main_tip','bad_compare'):
             with self.subTest(mode=mode):
-                revision='d'*40  # Running revision can supersede the triggering checkout.
+                revision='a'*40 if mode=='exact' else 'd'*40  # A verified main descendant may supersede this checkout.
                 source='https://raw.githubusercontent.com/pocketcontext/wikicontext-demo/'+revision
                 installation={'method':'skills','skill':'wikicontext',
                     'source':'https://github.com/pocketcontext/wikicontext-demo/tree/main/skills/wikicontext',
@@ -128,6 +128,20 @@ class DeploymentTests(unittest.TestCase):
                     data=io.BytesIO(body);data.status=200;data.geturl=lambda:'https://foreign.example/' if mode=='redirect' else url
                     return data
                 def docker(args,**kwargs):
+                    if args[0]=='gh':
+                        self.assertEqual(args[:2],['gh','api'])
+                        endpoint=args[2]
+                        self.assertTrue(endpoint.startswith('repos/pocketcontext/wikicontext-demo/'))
+                        if endpoint.endswith('/git/ref/heads/main'):
+                            if mode=='main_lookup':raise subprocess.CalledProcessError(1,args)
+                            output='invalid' if mode=='bad_head' else revision if mode=='main_tip' else 'f'*40
+                        elif endpoint.endswith('/compare/'+'a'*40+'...'+revision):
+                            if mode=='compare_lookup':raise subprocess.CalledProcessError(1,args)
+                            output={'older':'behind','diverged':'diverged','bad_compare':'unexpected'}.get(mode,'ahead')
+                        elif endpoint.endswith('/compare/'+revision+'...'+(revision if mode=='main_tip' else 'f'*40)):
+                            output='diverged' if mode=='off_main' else 'identical' if mode=='main_tip' else 'ahead'
+                        else:raise AssertionError(args)
+                        return subprocess.CompletedProcess(args,0,output,'')
                     self.assertEqual(args[0],'docker');docker_calls.append(args[1:])
                     output=''
                     if args[1]=='pull':
@@ -142,8 +156,8 @@ class DeploymentTests(unittest.TestCase):
                             path=Path(args[3])/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(body)
                     elif args[1]!='rm':raise AssertionError(args)
                     return subprocess.CompletedProcess(args,0,output,'')
-                with patch('urllib.request.urlopen',side_effect=fetch),patch('subprocess.run',side_effect=docker),patch('time.sleep'),patch('builtins.print'):
-                    if mode=='success':exec(program,{})
+                with patch('urllib.request.urlopen',side_effect=fetch),patch('subprocess.run',side_effect=docker),patch('time.sleep'),patch('builtins.print'),patch.dict(os.environ,{'GITHUB_SHA':'invalid' if mode=='bad_trigger' else 'a'*40}):
+                    if mode in ('success','exact','main_tip'):exec(program,{})
                     else:
                         with self.assertRaises(SystemExit):exec(program,{})
                 if mode in ('success','asset','sql','root','changed'):
@@ -235,6 +249,8 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn('python3 docker/standard_demo_smoke.py --image wikicontext:ci', check)
         self.assertIn('WIKICONTEXT_TEST_REQUIRE_NGINX=true', check)
         self.assertIn('wikicontext:ci /tmp/test_demo_proxy_headers.py', check)
+        self.assertIn('WIKICONTEXT_TEST_REQUIRE_PRIVILEGES=true', check)
+        self.assertIn('wikicontext:ci /tmp/test_demo_privileges.py', check)
         self.assertIn('WIKICONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/wikicontext-litestream"', check)
         for mode in (' config --image ', ' smoke --image '):
             self.assertIn(mode, check)

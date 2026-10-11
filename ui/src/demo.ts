@@ -1,6 +1,6 @@
 // Public-demo onboarding: status validation, the enrollment state machine and the
 // demo API calls. Live behaviour is enabled only by a validated same-origin status.
-// The unsubscribe capability is held in memory only and never persisted.
+// The unsubscribe capability is held in memory; visitors may explicitly save its private link.
 import { pb } from "./api";
 
 export const SKILL_SOURCE = "https://github.com/pocketcontext/wikicontext-demo/tree/main/skills/wikicontext";
@@ -310,7 +310,13 @@ export async function enroll(
   };
 }
 export async function withdraw(token: string): Promise<void> {
-  const value = await demoSend<Record<string, unknown>>("/api/demo/unsubscribe", { token });
+  // Keep withdrawal independent of stale login credentials and reset status.
+  const response = await fetch("/api/demo/unsubscribe", {
+    method: "POST", credentials: "omit", cache: "no-store", referrerPolicy: "no-referrer",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
+  });
+  if (!response.ok) throw new DemoError("Withdrawal could not be confirmed. Please try again.", response.status);
+  const value: unknown = await response.json();
   if (!isRecord(value) || value.ok !== true) throw new DemoError("Withdrawal could not be confirmed. Please try again.", 0);
 }
 

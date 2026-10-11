@@ -393,6 +393,74 @@ class OnceRuntimeStateTests(unittest.TestCase):
         self.assertTrue(value.status()['ready'])
         self.assertEqual(sum(event == ('purge',) for event in backend.events), 1)
 
+    def test_probe_crossing_midnight_resets_instead_of_blocking(self):
+        value, backend = self.populated()
+        before = backend.contents()
+        original = backend.healthy
+        def crossing():
+            self.day[0] = '2026-10-10'
+            backend.healthy = original
+            return False
+        backend.healthy = crossing
+        value.tick()
+        self.assertTrue(value.ready)
+        self.assertEqual(value.generation, self.day[0])
+        self.assertEqual(backend.events.count(('purge',)), 1)
+        self.assertEqual(backend.contents()['contacts'], before['contacts'])
+
+    def test_transient_probe_failure_recovers_and_probes_are_spaced(self):
+        value, backend = self.populated()
+        value.minute = lambda: 0
+        now = [0.]
+        value.monotonic = lambda: now[0]
+        probes = []
+        def probe():
+            probes.append(now[0])
+            return len(probes) != 1
+        backend.healthy = probe
+        value.tick()
+        self.assertTrue(value.ready)
+        for _ in range(10):
+            value.tick()
+        self.assertEqual(probes, [0.])
+        now[0] = 2.
+        value.tick()
+        self.assertEqual(value.health_failures, 0)
+        self.assertTrue(backend.opened and backend.app and backend.contacts)
+
+    def test_repeated_probe_failure_exits_and_stale_restart_resets(self):
+        value, backend = self.populated()
+        before = backend.contents()
+        value.minute = lambda: 0
+        now = [0.]
+        value.monotonic = lambda: now[0]
+        backend.healthy = lambda: False
+        for instant in (0., 2.):
+            now[0] = instant
+            value.tick()
+            self.assertTrue(value.ready)
+        now[0] = 4.
+        with self.assertRaises(self.module.RuntimeErrorSafe):
+            value.tick()
+        self.assertFalse(value.ready or backend.opened or backend.app or backend.contacts)
+        value.close()
+        self.day[0] = '2026-10-10'
+        replacement, candidate = self.instance()
+        replacement.start()
+        self.assertTrue(replacement.ready)
+        self.assertEqual(candidate.events.count(('purge',)), 1)
+        self.assertEqual(candidate.contents()['contacts'], before['contacts'])
+
+    def test_prepared_release_is_not_probed_or_reset_by_ticks(self):
+        value, backend = self.populated()
+        value.prepare_release({'image': IMAGE, 'revision': NEXT_REVISION})
+        self.day[0] = '2026-10-10'
+        backend.healthy = lambda: self.fail('fenced releases must not be probed')
+        value.tick()
+        self.assertEqual(value.phase, 'prepared')
+        self.assertNotIn(('purge',), backend.events)
+        self.assertFalse(backend.opened or backend.app or backend.contacts)
+
     def test_release_requires_candidate_validation_before_public_commit(self):
         old, backend = self.populated()
         before = backend.contents()

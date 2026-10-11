@@ -33,3 +33,5 @@ ui/**
 !supervisor/**
 !deploy/demo/verify_compatibility.py
 !deploy/demo/compatibility.json
+
+!deploy/demo/child_privileges.py
