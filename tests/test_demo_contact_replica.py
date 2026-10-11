@@ -21,6 +21,15 @@ import contact_replica as replica
 import retention
 
 class ContactReplicaTests(unittest.TestCase):
+    def test_local_replica_respects_sync_interval(self):
+        for interval in (None,'1s'):
+            with self.subTest(interval=interval),tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{},clear=True):
+                if interval is not None:os.environ['CONTACTS_LITESTREAM_SYNC_INTERVAL']=interval
+                value=replica.Replica(Path(tmp)/'state/contacts.db','unused','unused','unused',local_replica=Path(tmp)/'replica')
+                expected=interval or '10s'
+                self.assertEqual(value.env['CONTACTS_LITESTREAM_SYNC_INTERVAL'],expected)
+                self.assertIn('sync-interval: '+expected+'\n',Path(value.config).read_text())
+
     def test_credentials_are_separated(self):
         env=replica.child_environment({'CONTACTS_LITESTREAM_ACCESS_KEY_ID':'contact','CONTACTS_LITESTREAM_SECRET_ACCESS_KEY':'synthetic',
               'LITESTREAM_ACCESS_KEY_ID':'ephemeral','WIKICONTEXT_S3_BUCKET':'ephemeral','AWS_SESSION_TOKEN':'synthetic'})

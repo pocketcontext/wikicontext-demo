@@ -46,6 +46,8 @@ The required set is:
 
 Optional: `WIKICONTEXT_S3_FORCE_PATH_STYLE`, `LITESTREAM_SYNC_INTERVAL`,
 `CONTACTS_LITESTREAM_RETENTION_HOURS` (at most 672), `CONTACTS_LITESTREAM_SYNC_INTERVAL`.
+Both sync intervals default to `10s`; set both to `10s` explicitly when updating
+an existing deployment that supplied an earlier override.
 The three buckets and the three access keys must all differ; the daily reset
 deletes the whole files and replica buckets and never receives contact
 credentials. Keep source values in the operator's private `.envrc.private` under
