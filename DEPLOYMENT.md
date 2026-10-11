@@ -1,5 +1,29 @@
 # WikiContext Demo deployment record
 
+## Audit remediation release — 11 October 2026
+
+- Source: `9f237178a9f8187df4336962b1348b1135776b88`.
+- Running image: `ghcr.io/pocketcontext/wikicontext-demo@sha256:21104253442e529f0d0e0242e43c21c32b86a5ef91927638caf81ac12d6435ea`.
+- Native AMD64/ARM64 application and container checks, image publication,
+  restricted deployment and public asset attestation all passed in
+  [run 38137380243](https://github.com/pocketcontext/wikicontext-demo/actions/runs/38137380243).
+
+Independent read-only checks confirmed the exact source revision, ready state,
+UTC generation `2026-10-11`, Google OAuth enabled and password login disabled.
+Anonymous SQL returned 401. The admin UI and superuser routes by both collection
+name and ID returned 404. Privacy, terms and legal CSS matched source bytes;
+CI additionally compared generated frontend assets with the released image.
+
+Allowlisted host inspection confirmed restart policy `always`, application
+process UID/GID 10001 and contact process UID/GID 10002. The existing named
+volume and application identity were retained. No infrastructure, storage or
+OAuth resources were created by this release.
+
+See [audit follow-up](docs/audit-2026-10-11-followup.md) for fixes, test evidence
+and remaining consent/admission/upload-policy limitations. External Google
+sign-in, an observed midnight reset and provider-backed populated recovery
+remain unverified; these release checks do not claim that evidence.
+
 ## Initial live deployment — 11 October 2026
 
 `https://wiki-demo.pocketcontext.com` is live on the existing `pocketdeploy-v1`
