@@ -1,5 +1,34 @@
 # WikiContext Demo deployment record
 
+## SQL snapshot cache — 11 October 2026
+
+- Source: `d7414674c5b9c4bcaa684596e4fe41da5bf35649`.
+- Running image: `ghcr.io/pocketcontext/wikicontext-demo@sha256:32c6c2627a0b0568952f20041cf744de1ae05670b3fe2e979b7d848fb7019fed`.
+- Native AMD64/ARM64 application, browser, container, populated predecessor
+  upgrade and recovery gates passed in
+  [run 38168226113](https://github.com/pocketcontext/wikicontext-demo/actions/runs/38168226113).
+  Publication passed on attempt 1; restricted deployment and public asset
+  attestation passed on attempt 2 after clearing the temporary delivery pause.
+
+The server transparently reuses bounded requester snapshots and invalidates them
+after committed changes. Personal-space authorization and separate private search
+remain intact. Temporary snapshots live under disposable `runtime/run`, so daily
+reset removes crash-orphaned files as well as normal runtime data. Native upgrade
+tests verified actual warm-cache files use that directory.
+
+Independent read-only host checks confirmed the exact image and source, active
+readiness for UTC generation `2026-10-11`, all three databases, no pending lifecycle
+journals, and matching baked/durable compatibility fingerprint
+`e26037f163c57a83f75a10ade2f12accbae60e38defef9e2d980cf7a0ea55df7`.
+The original volume `once-app-wikicontext-demo.8bbe30` remains attached to exactly
+one running container with one application writer and restart policy `always`.
+Delivery is enabled and `WIKICONTEXT_DEMO_DEPLOY_PAUSED` is restored to `false`.
+No new infrastructure, storage or OAuth resources were created.
+
+See [cache behavior and local validation](docs/snapshot-cache.md). No authenticated
+live-demo latency benchmark, real Google sign-in, observed midnight reset or
+provider-backed populated recovery is claimed by this release.
+
 ## OAuth callback fix — 11 October 2026
 
 - Source: `9527f958673908767b86f010a35fd5facb386da8`.
