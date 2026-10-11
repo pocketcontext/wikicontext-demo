@@ -23,6 +23,13 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.screenshot({ path: "/tmp/wikicontext-demo-desktop.png", fullPage: true });
   await signIn(page, request, "reader");
+  await expect(page.getByRole("heading", { name: "Review your choices.", exact: true })).toBeVisible();
+  await expect(page.getByText("Daily reset", { exact: true })).toBeVisible();
+  await expect(page.locator(".enrollment-card legend")).toBeVisible();
+  await expect(page.locator(".enrollment-card legend")).toHaveText("Your choices");
+  await expect(page.locator(".enrollment-card .identity")).toContainText("reader@example.test");
+  await expect(page.locator(".enrollment-card")).not.toContainText("Sign in with Google, then");
+  await page.locator(".enrollment-card").screenshot({ path: "/tmp/wikicontext-demo-consent-card.png" });
   const terms = page.getByRole("checkbox", { name: /I accept the demo terms/ });
   const submit = page.getByRole("button", { name: /Accept terms/ });
   await expect(submit).toBeEnabled();
@@ -52,6 +59,12 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   await terms.check(); await submit.click();
   await expect(page.getByRole("heading", { name: "Connect your coding agent.", exact: true })).toBeVisible();
   await expect(page.locator("#setup")).toBeFocused();
+  await page.locator("#setup").screenshot({ path: "/tmp/wikicontext-demo-agent-guide.png" });
+  await expect(page.getByRole("heading", { name: "Your wiki is ready.", exact: true })).toBeVisible();
+  const setupLink = page.getByRole("link", { name: "Connect your coding agent", exact: true });
+  await setupLink.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#setup")).toBeFocused();
   await expect(page.getByLabel("Coding-agent setup instructions")).toContainText("reader@example.test");
   await expect(page.getByLabel("Coding-agent setup instructions")).toContainText("wikicontext-demo");
   await expect(page.getByRole("table", { name: "Today’s usage and daily limits" })).toBeVisible();
@@ -80,7 +93,7 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   await expect(withdrawalPage.getByRole("status")).toContainText("This withdrawal link is incomplete");
   await expect(withdrawalPage.getByRole("button")).toBeDisabled();
   await privateContext.close();
-  await page.getByRole("link", { name: "Open your wiki" }).click();
+  await page.getByRole("link", { name: "Open your wiki", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Space", exact: true })).toHaveCount(0);
   const response = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/publish");
@@ -99,10 +112,27 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   await expect(page.getByText("Private starlight observation.", { exact: false })).toHaveCount(0);
   await signIn(page, request, "other");
   await terms.check(); await submit.click();
-  await page.getByRole("link", { name: "Open your wiki" }).click();
+  await page.getByRole("link", { name: "Open your wiki", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Private observatory", exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test("saved optional choices are visible before daily terms acceptance", async ({ page, request }) => {
+  await page.route("**/api/demo/preferences", route => route.fulfill({
+    json: { revision: 2, salesContact: true, newsletter: false },
+  }));
+  await page.goto("/");
+  await signIn(page, request, "saved-preferences");
+  const notice = page.getByText("Your saved preferences are shown. Review them before continuing.", { exact: true });
+  await expect(notice).toBeVisible();
+  const choices = page.locator(".enrollment-card legend");
+  await expect(choices).toBeVisible();
+  expect(await notice.evaluate(element => !!(element.compareDocumentPosition(document.querySelector(".enrollment-card legend")!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBeTruthy();
+  await expect(page.getByRole("checkbox", { name: /commercial offers/ })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /newsletter/ })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /I accept the demo terms/ })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: /Accept terms/ })).toBeEnabled();
 });
 
 test("mobile layout, legal pages, unavailable and reset states", async ({ page, request }) => {
@@ -115,9 +145,22 @@ test("mobile layout, legal pages, unavailable and reset states", async ({ page, 
   const legal = await request.get("/terms/"); expect(legal.ok()).toBeTruthy();
   expect(await legal.text()).toContain("00:00 UTC");
   await signIn(page, request, "mobile");
+  await expect(page.getByRole("heading", { name: "Review your choices.", exact: true })).toBeVisible();
+  await expect(page.locator(".enrollment-card legend")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.getByRole("checkbox", { name: /I accept the demo terms/ }).check();
   await page.getByRole("button", { name: /Accept terms/ }).click();
   await expect(page.getByLabel("Coding-agent setup instructions")).toBeVisible();
+  const publishStep = page.locator("#setup summary").filter({ hasText: "Publish a sample document" });
+  await publishStep.focus();
+  await page.keyboard.press("Enter");
+  await expect(publishStep.locator("..")).toHaveAttribute("open", "");
+  await page.keyboard.press("Tab");
+  const readStep = page.locator("#setup summary").filter({ hasText: "Read your cited wiki" });
+  await readStep.focus();
+  await page.keyboard.press("Enter");
+  await expect(readStep.locator("..")).toHaveAttribute("open", "");
+  await expect(page.locator("#setup").getByRole("link", { name: "Open your wiki", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.screenshot({ path: "/tmp/wikicontext-demo-mobile.png", fullPage: true });
@@ -130,7 +173,7 @@ test("mobile layout, legal pages, unavailable and reset states", async ({ page, 
   await expect(page.getByText("Coding-agent setup is temporarily unavailable.", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Coding-agent setup instructions")).toHaveCount(0);
   await page.unroute("**/api/demo/status");
-  await page.getByRole("link", { name: "Open your wiki" }).click();
+  await page.getByRole("link", { name: "Open your wiki", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
   // A live service fence immediately removes private reader state.
   await page.route("**/api/context/query", route => route.fulfill({ status: 503, json: { message: "Resetting" } }));

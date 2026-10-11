@@ -1,5 +1,4 @@
 import { withdrawalLink } from "./Withdrawal";
-import "./landing.css";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
   agentPrompt,
@@ -161,7 +160,8 @@ export default function Landing(props: LandingProps) {
           <section ref={setupRef} id="setup" className="setup wrap" aria-labelledby="setup-title" tabIndex={-1}>
             <p className="eyebrow">NEXT STEP</p>
             <h2 id="setup-title">Connect your coding agent.</h2>
-            <AgentSetup status={status} email={identity?.email || ""} />
+            <p>You’re enrolled for today’s demo. Follow these steps with a harmless sample document.</p>
+            <AgentSetup status={status} email={identity?.email || ""} wikiHref={props.wikiHref} onOpenWiki={props.onOpenWiki} />
             <Restrictions />
             <Usage status={status} usage={state.enrollment?.usage ?? null} />
           </section>
@@ -254,7 +254,7 @@ function EnrollmentCard(props: LandingProps) {
     <div className="enrollment-card" aria-busy={busy}>
       <div className="card-heading">
         <span className="mini-label">YOUR DEMO</span>
-        <span className="mode-pill">{live ? `Day ${status.generation}` : "Not connected"}</span>
+        <span className="mode-pill">{live ? "Daily reset" : "Not connected"}</span>
       </div>
       {!live ? (
         <>
@@ -271,6 +271,7 @@ function EnrollmentCard(props: LandingProps) {
         </>
       ) : signedIn ? (
         <>
+          <h3>{state.phase === "enrolled" ? "Your wiki is ready." : "Review your choices."}</h3>
           <div className="identity">
             <span className="avatar" aria-hidden="true">{Array.from((identity!.name || identity!.email).trim())[0]?.toUpperCase() || "?"}</span>
             <div className="identity-details">
@@ -278,10 +279,16 @@ function EnrollmentCard(props: LandingProps) {
               <span>{identity!.email}</span>
             </div>
           </div>
+          <button type="button" className="link-button signout-button" onClick={props.onSignOut} disabled={state.phase === "enrolling"}>
+            Sign out of this browser
+          </button>
           {state.phase === "enrolled" ? (
             <div className="enrolled">
               <p>You’re enrolled for today’s demo. Your personal wiki is ready.</p>
-              <a className="primary-button" href={props.wikiHref} onClick={props.onOpenWiki}>Open your wiki <Arrow /></a>
+              <div className="enrolled-actions">
+                <a className="primary-button" href="#setup" onClick={jump("setup")}>Connect your coding agent <Arrow /></a>
+                <a className="secondary-button" href={props.wikiHref} onClick={props.onOpenWiki}>Open your wiki <Arrow /></a>
+              </div>
               {state.unsubscribeToken && (
                 <div>
                   <button type="button" className="link-button" onClick={props.onWithdraw}>
@@ -295,6 +302,11 @@ function EnrollmentCard(props: LandingProps) {
             </div>
           ) : (
             <form onSubmit={submit} aria-describedby={statusId}>
+              <p className="preferences-notice">
+                {state.preferences?.revision
+                  ? "Your saved preferences are shown. Review them before continuing."
+                  : "Both optional choices are off unless you turn them on."}
+              </p>
               <fieldset disabled={state.phase === "enrolling"}>
                 <legend>Your choices</legend>
                 <label className="check-row required">
@@ -315,9 +327,6 @@ function EnrollmentCard(props: LandingProps) {
                   <span>Subscribe me to the PocketContext newsletter.</span>
                 </label>
                 <p className="privacy-note">
-                  {state.preferences?.revision
-                    ? "Your saved preferences are shown. Review them before continuing."
-                    : "Both optional choices are off unless you turn them on."}{" "}
                   Read the <a href="/privacy/" target="_blank" rel="noopener">privacy notice</a>.
                 </p>
                 <button className="primary-button continue-button" type="submit" disabled={!canContinue(state, status, now)}>
@@ -326,9 +335,6 @@ function EnrollmentCard(props: LandingProps) {
               </fieldset>
             </form>
           )}
-          <button type="button" className="link-button" onClick={props.onSignOut} disabled={state.phase === "enrolling"}>
-            Sign out of this browser
-          </button>
         </>
       ) : (
         <>
@@ -354,7 +360,7 @@ function EnrollmentCard(props: LandingProps) {
   );
 }
 
-function AgentSetup({ status, email }: { status: DemoStatus | null; email: string }) {
+function AgentSetup({ status, email, wikiHref, onOpenWiki }: { status: DemoStatus | null; email: string; wikiHref: string; onOpenWiki: () => void }) {
   const installation = checkedInstallation(status);
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
   const code = useRef<HTMLElement>(null);
@@ -383,25 +389,48 @@ function AgentSetup({ status, email }: { status: DemoStatus | null; email: strin
   };
   return (
     <div className="agent-setup">
-      <p>
-        Paste these instructions into Claude Code, Codex or another coding agent. It installs the public
-        <code> wikicontext </code> skill, signs in with the same Google account and helps you publish your first cited
-        pages. Node.js/npm and uv are required. Nothing runs until your agent runs it.
-      </p>
-      <div className="codebox">
-        <button type="button" className="copy-button" onClick={() => void copyPrompt()}>
-          {copy === "copied" ? "Copied" : copy === "failed" ? "Select & copy" : "Copy instructions"}
-        </button>
-        <pre tabIndex={0} aria-label="Coding-agent setup instructions"><code ref={code}>{prompt}</code></pre>
+      <p className="agent-note">Copy the instructions into your coding agent, then use the next two steps as a guide. This page cannot confirm what your agent has completed.</p>
+      <div className="guide-steps">
+        <details open>
+          <summary><span>01</span> Install and sign in</summary>
+          <div className="guide-content">
+            <p>
+              Paste these instructions into Claude Code, Codex or another coding agent. It installs the public
+              <code> wikicontext </code> skill, signs in with the same Google account and helps you publish your first cited
+              pages. Node.js/npm and uv are required. Nothing runs until your agent runs it.
+            </p>
+            <div className="codebox">
+              <button type="button" className="copy-button" onClick={() => void copyPrompt()}>
+                {copy === "copied" ? "Copied" : copy === "failed" ? "Select & copy" : "Copy instructions"}
+              </button>
+              <pre tabIndex={0} aria-label="Coding-agent setup instructions"><code ref={code}>{prompt}</code></pre>
+            </div>
+            <p className="copy-status" role="status" aria-live="polite">
+              {copy === "copied"
+                ? "Instructions copied. No commands have been run."
+                : copy === "failed"
+                  ? "Clipboard unavailable. The instructions are selected; copy them manually."
+                  : ""}
+            </p>
+            <p className="micro">Client revision {installation.clientRevision.slice(0, 12)} · source {installation.source}</p>
+          </div>
+        </details>
+        <details>
+          <summary><span>02</span> Publish a sample document</summary>
+          <div className="guide-content">
+            <p>Give your agent a harmless text, Markdown or PDF file. Ask it to ingest the source, write linked pages with citations, check them and publish.</p>
+            <p>Uploading a source is only the first step. The agent must publish the pages before they appear in the reader.</p>
+          </div>
+        </details>
+        <details>
+          <summary><span>03</span> Read your cited wiki</summary>
+          <div className="guide-content">
+            <p>Open your wiki to read and search the published pages. Follow a citation back to its source passage, then ask your agent to make an update and publish again.</p>
+            <p>Your wiki resets at 00:00 UTC. After the reset, sign in and accept the terms again to start fresh.</p>
+            <a className="secondary-button" href={wikiHref} onClick={onOpenWiki}>Open your wiki <Arrow /></a>
+          </div>
+        </details>
       </div>
-      <p className="copy-status" role="status" aria-live="polite">
-        {copy === "copied"
-          ? "Instructions copied. No commands have been run."
-          : copy === "failed"
-            ? "Clipboard unavailable. The instructions are selected; copy them manually."
-            : ""}
-      </p>
-      <p className="micro">Client revision {installation.clientRevision.slice(0, 12)} · source {installation.source}</p>
     </div>
   );
 }
