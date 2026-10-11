@@ -82,7 +82,9 @@ jobs:
       - name: Native ONCE bootstrap and exclusive volume
         run: python3 docker/once_smoke.py --image wikicontext:ci
       - name: Standard PocketDeploy lifecycle and populated recovery
-        run: python3 docker/standard_demo_smoke.py --image wikicontext:ci
+        run: >-
+          python3 docker/standard_demo_smoke.py --image wikicontext:ci
+          --previous-image ghcr.io/pocketcontext/wikicontext-demo@sha256:d69f89e376e4b214ef0118a1c9c6eac86b12cc89637789681a1ed0ef9cb0a449
       - name: Startup errors for missing configuration
         run: python3 docker/smoke.py config --image wikicontext:ci
       - name: Smoke test

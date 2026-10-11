@@ -52,6 +52,12 @@ Changing those inputs requires a reviewed compatibility declaration. This fresh
 demo accepts no legacy revisions without a fingerprint; incompatible predecessors
 remain fenced rather than receiving an implicit migration.
 
+The snapshot-cache server upgrade explicitly accepts predecessor fingerprint
+`79ef7c911759b3f0e3a9fb17d54a4be83afef8a427994e9f6a9b7680ac88f4f0`.
+Application migrations and the retained contact schema are unchanged. Its release
+gate upgrades a populated predecessor image to the candidate, checks protected
+originals and withdrawn contact preferences, then restarts the same candidate.
+
 An upgrade records a private, fsynced `control/upgrade-pending.json` before starting
 writers. It includes source/target identities, schema identity, phase and a logical
 baseline of all three databases. The worker starts the candidate while ingress
@@ -152,3 +158,9 @@ WIKICONTEXT_TEST_LITESTREAM=/path/to/pinned/litestream \
 Container config, smoke, exclusive-volume startup, standard replacement and
 populated recovery remain release gates. Mocked state tests alone do not establish
 real storage or provider recovery.
+
+For an actual image upgrade, run `python3 docker/standard_demo_smoke.py --image
+CANDIDATE_IMAGE --previous-image PREDECESSOR_IMAGE` with immutable image references.
+Without `--previous-image`, the test changes only the candidate revision label.
+The process test also accepts `WIKICONTEXT_TEST_PREDECESSOR_BINARY` to exercise
+different server binaries while comparing all three logical databases.
