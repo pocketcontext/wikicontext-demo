@@ -1,6 +1,14 @@
 # Demo reset and durable contact operations
 
-**Status: not deployed, not provider-verified.** This is an executable implementation ported from VaultContext Demo with synthetic local tests. The planned origin `https://wiki-demo.pocketcontext.com`, its Google OAuth client, DNS record, buckets and credentials are not provisioned. The public repository and main-only GitHub deployment environment exist; image publication and deployment opt-ins remain unset. The proposed `pocketdeploy-v1` host has not been selected or assessed for demo capacity. No resources, timers, accounts or mail subscriptions are created by committing these files. WikiContext production (`wiki.pocketcontext.com`, repository `pocketcontext/wikicontext`) must never use these reset scripts, buckets or images.
+**Status: live since 11 October 2026.** The demo runs at
+`https://wiki-demo.pocketcontext.com` on `pocketdeploy-v1` alongside Vault Demo,
+with separate OAuth configuration, DNS, volume and three private EU buckets.
+Publication and restricted standard CD are enabled and unpaused. Public readiness,
+assets, legal pages, installation and authentication-method checks passed; real
+Google sign-in, midnight observation and provider-backed populated recovery remain
+unverified. See [deployment evidence](../DEPLOYMENT.md). WikiContext production
+(`wiki.pocketcontext.com`, repository `pocketcontext/wikicontext`) must never use
+these reset scripts, buckets or images.
 
 ## Public demo policy
 
@@ -40,7 +48,7 @@ Counters live in the closed `demo_enrollments.usage` field and are updated insid
 
 ## Resource naming
 
-Proposed resource names follow the adopted naming policy (`<profile>-<component>-<purpose>[-<credential-generation>]`) for the planned `pocketdeploy-v1` profile: `pocketdeploy-v1-wikicontext-demo-files` (primary originals), `pocketdeploy-v1-wikicontext-demo-replica` (`data.db` and `auxiliary.db`) and `pocketdeploy-v1-wikicontext-demo-contacts-replica` (durable contacts). Credentials follow `<bucket>-rw-YYYYMMDD`, for example `pocketdeploy-v1-wikicontext-demo-files-rw-20261010`; no credential exists yet. Bucket names stay stable across credential rotations; dates identify credential generations, with an additional sequence for multiple generations on the same date. Use the actual selected deployment profile; `once-v2` is not a required prefix. These demo validators deliberately accept only the proposed profile and role-specific names, so selecting another profile requires a reviewed allowlist change. Existing production names remain unchanged. After authorized provisioning, register each bucket and credential as WikiContext resource and credential entity pages under that policy.
+Provisioned resource names follow the adopted naming policy (`<profile>-<component>-<purpose>[-<credential-generation>]`) for the `pocketdeploy-v1` profile: `pocketdeploy-v1-wikicontext-demo-files` (primary originals), `pocketdeploy-v1-wikicontext-demo-replica` (`data.db` and `auxiliary.db`) and `pocketdeploy-v1-wikicontext-demo-contacts-replica` (durable contacts). Credentials follow `<bucket>-rw-YYYYMMDD`, for example `pocketdeploy-v1-wikicontext-demo-files-rw-20261010`; actual credential references remain private. Bucket names stay stable across credential rotations; dates identify credential generations, with an additional sequence for multiple generations on the same date. Use the actual selected deployment profile; `once-v2` is not a required prefix. These demo validators deliberately accept only the proposed profile and role-specific names, so selecting another profile requires a reviewed allowlist change. Existing production names remain unchanged. After authorized provisioning, register each bucket and credential as WikiContext resource and credential entity pages under that policy.
 
 ## Storage boundaries
 

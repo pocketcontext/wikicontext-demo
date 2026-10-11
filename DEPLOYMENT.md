@@ -1,29 +1,39 @@
 # WikiContext Demo deployment record
 
-## Release preparation — 11 October 2026
+## Initial live deployment — 11 October 2026
 
-Target: `https://wiki-demo.pocketcontext.com` on the existing `pocketdeploy-v1`
-OCI host alongside Vault Demo. Host reachability and initial capacity checks
-passed; the existing Vault Demo remained healthy. The operator confirmed the
-operator/contact details and quotas. Dedicated Google OAuth values are saved
-privately; real sign-in remains unverified.
+`https://wiki-demo.pocketcontext.com` is live on the existing `pocketdeploy-v1`
+OCI host alongside Vault Demo, using the application-owned supervisor and
+standard PocketDeploy stop-first delivery. No custom host dispatcher is installed.
 
-This release uses an application-owned standard supervisor and ordinary
-PocketDeploy stop-first delivery. No custom host dispatcher is required.
-The repository's publication switch is enabled for gated native builds; automatic
-deployment remains disabled and paused until first-install verification.
-Three independently scoped EU buckets are planned:
-`pocketdeploy-v1-wikicontext-demo-files`,
-`pocketdeploy-v1-wikicontext-demo-replica`, and
-`pocketdeploy-v1-wikicontext-demo-contacts-replica`.
-Provisioning and live activation are not yet recorded as complete.
+- Source: `219c8804de668a179ddc0ec270136e1467867847`.
+- Image: `ghcr.io/pocketcontext/wikicontext-demo@sha256:68bab77b5e3f29f710e41291a1ef5ecca09ae3f99dcd1a58717bef177fc2bef6`.
+- Native application/container CI: [successful run 38126921270](https://github.com/pocketcontext/wikicontext-demo/actions/runs/38126921270).
+- Dedicated initialized volume: `once-app-wikicontext-demo.8bbe30`.
+- Three private EU buckets with independent scoped credentials:
+  `pocketdeploy-v1-wikicontext-demo-files`,
+  `pocketdeploy-v1-wikicontext-demo-replica`, and
+  `pocketdeploy-v1-wikicontext-demo-contacts-replica`.
+
+Public attestation passed: ready revision, current UTC generation, stable runtime
+identity, HTTPS without redirects, byte-equal released React assets and legal
+pages, expected agent installation, and anonymous SQL rejection. Public auth
+metadata confirms Google OAuth is enabled and password authentication disabled.
+The released image digest matches the tested image. These are public read checks,
+not proof of a completed Google sign-in.
+
+The operator confirmed the operator/contact details and quotas. Vault Demo remained
+healthy on its existing revision. Publication and CD are enabled and deployment is
+unpaused through the repository-specific `pocketdeploy-v1` GitHub environment.
+The profile reconciled to configured `latest` without replacing the running image;
+the next source push exercises the complete publication and restricted CD path.
+
+Real Google sign-in, an observed midnight reset and a provider-backed populated
+recovery drill remain unverified. Synthetic recovery, reset and browser tests do
+not substitute for those operational checks.
 
 See [validation evidence](docs/demo-validation.md),
 [standard supervisor](docs/standard-supervisor.md) and
-[deployment procedure](docs/deployment.md).
-
-Core WikiContext production remains independent. Its source, images, OAuth,
-storage and release controls must not be used for this disposable demo.
-
-Record the published source revision, image digest, native CI, initialized named
-volume, generation, public checks and remaining limitations after activation.
+[deployment procedure](docs/deployment.md). Core WikiContext production remains
+independent; its source, images, OAuth, storage and release controls must not be
+used for this disposable demo.

@@ -1,12 +1,11 @@
 # Demo validation status — 10 October 2026
 
-**Not deployed, not provider-verified.** This records local synthetic validation
-of the `wikicontext-demo` worktree captured by the commit containing this record.
-The public GitHub repository and main-only `wikicontext-demo` environment now exist.
-The initial package commit is `ca78b763de03f25c0f9b8bb8fb232cb3657b0020`;
-the portable launcher uses that dedicated repository and full revision.
-Image publication and deployment opt-ins remain unset. No demo cloud resources,
-host dispatcher or timer have been provisioned, and no live demo service was contacted.
+**Live bootstrap verified on 11 October 2026; operational acceptance is partial.**
+The checks below retain their original synthetic scope. Current live evidence is
+recorded in [DEPLOYMENT.md](../DEPLOYMENT.md). The initial package commit is
+`ca78b763de03f25c0f9b8bb8fb232cb3657b0020`; the portable launcher uses that
+dedicated repository and full revision. Publication and restricted CD are now
+enabled through the main-only `pocketdeploy-v1` environment.
 
 ## Earlier local checks
 
@@ -189,3 +188,19 @@ showed about 5 GiB available RAM and 43 GiB free disk before adding Wiki Demo.
 Vault Demo remained healthy with no pending operations. Live Wiki Demo resource
 creation, OAuth sign-in, midnight observation and provider recovery are separate
 release evidence and must not be inferred from these local checks.
+
+## Live bootstrap verification — 11 October 2026
+
+Source `219c8804de668a179ddc0ec270136e1467867847` passed native CI in
+[run 38126921270](https://github.com/pocketcontext/wikicontext-demo/actions/runs/38126921270)
+and was deployed using the exact image and isolated storage listed in
+[the deployment record](../DEPLOYMENT.md). Independent public workflow attestation
+passed for the current generation, stable ready revision, released React assets,
+legal pages, installation, HTTPS/no redirects and anonymous SQL rejection. Google
+OAuth is advertised and enabled; password authentication is disabled. Vault Demo
+remained healthy. Standard profile reconciliation to `latest` completed without
+replacement; enabled CD will process the next source push.
+
+No real Google sign-in, live midnight reset observation or provider-backed
+populated recovery drill has yet been completed. These remain explicit acceptance
+checks rather than inferred successes from local or native CI tests.

@@ -24,7 +24,7 @@ uses private per-requester indexes configured in `pocketcontext.json`. The serve
 pin includes private-search support. See
 [private search](docs/fts-adoption.md).
 
-Keep data outside Git. Provision users through operator maintenance, or configure a separate Google Web client with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and `WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN`. Register `http://127.0.0.1:8765/callback` and the approved origin's `/api/oauth2-redirect`. Use ordinary user credentials for knowledge operations. The intended demo origin is https://wiki-demo.pocketcontext.com; it is not deployed. Public demo mode requires the separate admission, contact and generation configuration in [demo operations](docs/demo-operations.md). See [release verification](DEPLOYMENT.md) and [deployment procedures](docs/deployment.md).
+Keep data outside Git. Provision users through operator maintenance, or configure a separate Google Web client with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and `WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN`. Register `http://127.0.0.1:8765/callback` and the approved origin's `/api/oauth2-redirect`. Use ordinary user credentials for knowledge operations. The public demo is deployed at https://wiki-demo.pocketcontext.com; see the deployment record for verified behavior and remaining operational checks. Public demo mode requires the separate admission, contact and generation configuration in [demo operations](docs/demo-operations.md). See [release verification](DEPLOYMENT.md) and [deployment procedures](docs/deployment.md).
 
 ## Browser reader
 

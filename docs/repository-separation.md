@@ -50,14 +50,16 @@ and vice versa, recording the source commit.
 
 1. Completed 10 October 2026: created the public repository and pushed `main`;
    local `upstream-local` remains available for upstream reviews.
-2. Completed 10 October 2026: configured the `wikicontext-demo` environment
-   restricted to the `main` branch. Keep
-   `WIKICONTEXT_DEMO_PUBLISH` and `WIKICONTEXT_DEMO_DEPLOY_ENABLED` unset until
-   native CI passes.
-3. Provision the OAuth client, DNS record, three buckets and three credentials;
-   register each as WikiContext resource/credential entity pages.
-4. Configure standard PocketDeploy delivery and its repository-specific restricted key.
-5. Converge through PocketDeploy, explicitly initialize the fresh application while readiness waits, and verify before enabling CD.
+2. Completed 11 October 2026: standard delivery uses the main-only
+   `pocketdeploy-v1` environment, with publication and CD enabled and unpaused
+   after native CI and first-install checks.
+3. Completed 11 October 2026: separate OAuth configuration, DNS, three private EU
+   buckets and scoped credentials are provisioned. WikiContext catalog references
+   are maintained separately from this public source record.
+4. Standard PocketDeploy delivery uses a repository-specific restricted key.
+5. The fresh application was explicitly initialized and deployed; public
+   attestation passed. Real Google sign-in, midnight observation and provider-backed
+   populated recovery remain outstanding; see [deployment evidence](../DEPLOYMENT.md).
 
 ## Release review: standard delivery, 11 October 2026
 
