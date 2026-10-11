@@ -3,7 +3,7 @@ import "./landing.css";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
   agentPrompt,
-  canSubmit,
+  canContinue,
   checkedInstallation,
   formatAmount,
   formatCountdown,
@@ -247,7 +247,7 @@ function EnrollmentCard(props: LandingProps) {
   const signedIn = live && !!identity && ["consent", "enrolling", "enrolled"].includes(state.phase);
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!canSubmit(state, terms, status, Date.now())) return;
+    if (!terms || !canContinue(state, status, Date.now())) return;
     props.onSubmit({ salesConsent: sales, newsletterConsent: newsletter });
   };
   return (
@@ -320,7 +320,7 @@ function EnrollmentCard(props: LandingProps) {
                     : "Both optional choices are off unless you turn them on."}{" "}
                   Read the <a href="/privacy/" target="_blank" rel="noopener">privacy notice</a>.
                 </p>
-                <button className="primary-button continue-button" type="submit" disabled={!canSubmit(state, terms, status, now)}>
+                <button className="primary-button continue-button" type="submit" disabled={!canContinue(state, status, now)}>
                   Accept terms &amp; continue <Arrow />
                 </button>
               </fieldset>

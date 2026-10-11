@@ -235,9 +235,9 @@ export function onboardingReducer(state: OnboardingState, event: OnboardingEvent
   }
 }
 
-export function canSubmit(state: OnboardingState, termsAccepted: boolean, status: DemoStatus | null, now: number): boolean {
+export function canContinue(state: OnboardingState, status: DemoStatus | null, now: number): boolean {
   return (
-    state.phase === "consent" && termsAccepted && !!status &&
+    state.phase === "consent" && !!status &&
     !!state.preferences && Number.isInteger(state.preferences.revision) && state.preferences.revision >= 0 &&
     pb.authStore.isValid && secondsUntil(status.resetAt, now) > 0
   );
