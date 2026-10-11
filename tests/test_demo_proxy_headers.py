@@ -17,6 +17,7 @@ import tempfile
 import threading
 import time
 import unittest
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = Path(os.environ.get('WIKICONTEXT_TEST_ONCE_RUNTIME', ROOT / 'deploy/demo/once_runtime.py'))
@@ -27,6 +28,19 @@ class Echo(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        request = urlsplit(self.path)
+        if request.path == '/api/oauth2-redirect':
+            query = parse_qs(request.query)
+            # Match the pinned PocketBase callback's relative Location header.
+            outcome = query.get('outcome', ['failure'])[0]
+            location = '../_/#/auth/oauth2-redirect-' + outcome
+            if outcome == 'unrelated':
+                location = '/unrelated/#/auth/oauth2-redirect-success'
+            self.send_response(int(query.get('status', ['307'])[0]))
+            self.send_header('Location', location)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
         response = json.dumps({'xff': self.headers.get('X-Forwarded-For'),
                                'cf': self.headers.get('CF-Connecting-IP'),
                                'real': self.headers.get('X-Real-IP')}).encode()
@@ -129,6 +143,29 @@ class ProxyHeaders(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.fetch([], path)[0], 404)
         self.assertEqual(self.fetch([], '/api/collections/users/auth-methods')[0], 200)
+
+    def test_oauth_callback_redirects_reach_reader_without_exposing_admin(self):
+        for status in (302, 303, 307):
+            for outcome in ('success', 'failure', 'success-extra', 'failure-extra', 'unrelated'):
+                with self.subTest(status=status, outcome=outcome):
+                    conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=3)
+                    try:
+                        conn.request('GET', f'/api/oauth2-redirect?outcome={outcome}&status={status}')
+                        response = conn.getresponse()
+                        response.read()
+                        self.assertEqual(response.status, status)
+                        if outcome == 'unrelated':
+                            expected = '/unrelated/#/auth/oauth2-redirect-success'
+                        elif outcome in ('success', 'failure'):
+                            expected = '/#/auth/oauth2-redirect-' + outcome
+                        else:
+                            expected = '../_/#/auth/oauth2-redirect-' + outcome
+                        self.assertEqual(response.getheader('Location'), expected)
+                    finally:
+                        conn.close()
+        # The callback exception must never expose the actual administrative SPA.
+        self.assertEqual(self.fetch([], '/_/')[0], 404)
+        self.assertEqual(self.fetch([], '/_/assets/index.js')[0], 404)
 
     def test_ingress_refuses_symlink_and_shared_writable_directory(self):
         with tempfile.TemporaryDirectory(prefix='wiki-ingress-fixture-') as temporary:

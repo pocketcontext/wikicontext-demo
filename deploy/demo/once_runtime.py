@@ -278,11 +278,15 @@ class Backend:
         if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid() or info.st_mode & 0o022:
             raise RuntimeErrorSafe('unsafe ingress directory')
         ingress.chmod(0o755)
+        # PocketBase uses admin-shell fragments for ordinary OAuth completion.
+        # Rewrite only those two upstream redirects; never expose the admin shell.
         route='''location / { if ($demo_reject_ip) { return 400; }
 proxy_pass http://127.0.0.1:8081; proxy_http_version 1.1;
 proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https;
 proxy_set_header X-Forwarded-For $demo_client_ip;
 proxy_set_header CF-Connecting-IP ""; proxy_set_header X-Real-IP ""; proxy_set_header Connection "";
+proxy_redirect "~^[.][.]/_/#/auth/oauth2-redirect-success$" "/#/auth/oauth2-redirect-success";
+proxy_redirect "~^[.][.]/_/#/auth/oauth2-redirect-failure$" "/#/auth/oauth2-redirect-failure";
 proxy_buffering off; proxy_request_buffering off; proxy_read_timeout 300s; }''' if opened else 'location / { return 503; }'
         config='''pid INGRESS/nginx.pid;
 error_log /dev/null; events { worker_connections 1024; }

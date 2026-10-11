@@ -173,6 +173,60 @@ test('Google popup callback persists login and localStorage.clear signs out othe
   await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toHaveCount(0);
 });
 
+test('OAuth completion survives nginx while exchange is pending and administration stays blocked', async ({ page, context, request }) => {
+  await mockGoogle(context, request, 'completion-ingress');
+  // Hold only this completion document open for inspection. The separate
+  // normal popup test verifies the real self-close needed after COOP navigation.
+  await context.addInitScript(() => {
+    if (location.hash === '#/auth/oauth2-redirect-success') {
+      (window as Window & { completionCloseAttempts?: number }).completionCloseAttempts = 0;
+      window.close = () => {
+        const callback = window as Window & { completionCloseAttempts: number };
+        callback.completionCloseAttempts += 1;
+      };
+    }
+  });
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/collections/users/auth-with-oauth2', async route => {
+    await held;
+    await route.continue();
+  });
+  try {
+    await page.goto('/');
+    const popupPromise = page.waitForEvent('popup');
+    await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
+    const popup = await popupPromise;
+    await expect(popup).toHaveURL(/^http:\/\/[^/]+\/#\/auth\/oauth2-redirect-success$/);
+    await expect(popup.getByRole('heading', { name: 'Return to WikiContext', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('wikicontext.reader.auth'))).toBeNull();
+    for (const path of ['/_', '/_/', '/_/index.html', '/api/collections/_superusers/auth-methods']) {
+      expect((await request.get(path)).status()).toBe(404);
+    }
+    release();
+    await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeVisible();
+    expect(await popup.evaluate(() => (window as Window & { completionCloseAttempts: number }).completionCloseAttempts)).toBeGreaterThan(0);
+    await popup.close();
+  } finally {
+    release();
+  }
+});
+
+test('OAuth callback failure through nginx has a usable inert completion page', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const response = await page.goto('/api/oauth2-redirect?error=access_denied&error_description=synthetic-denial');
+  expect(response?.status()).toBe(200);
+  await expect(page).toHaveURL(/^http:\/\/[^/]+\/#\/auth\/oauth2-redirect-failure$/);
+  await expect(page.getByRole('heading', { name: 'Sign-in could not complete', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('wikicontext.reader.auth'))).toBeNull();
+  await expect(page.getByRole('button', { name: 'Continue with Google', exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Close this window', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Open WikiContext', exact: true })).toBeFocused();
+});
+
 test('Google login works in memory when browser storage is blocked', async ({ page, context, request }) => {
   await context.addInitScript(() => {
     Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Blocked', 'SecurityError'); } });
@@ -253,3 +307,19 @@ test('a late successful Google exchange cannot restore a cancelled session', asy
   await expect(page.getByRole('button', { name: 'Continue with Google', exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('wikicontext.reader.auth'))).toBeNull();
 });
+
+for (const outcome of ['success', 'failure']) {
+  test(`OAuth ${outcome} completion preserves auth storage and makes no API calls`, async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('wikicontext.reader.auth', JSON.stringify({ token: 'synthetic-expired-token', record: { id: 'synthetic' } }));
+    });
+    const apiRequests: string[] = [];
+    page.on('request', request => {
+      if (new URL(request.url()).pathname.startsWith('/api/')) apiRequests.push(request.url());
+    });
+    await page.goto(`/#/auth/oauth2-redirect-${outcome}`);
+    await expect(page.getByRole('heading', { name: outcome === 'success' ? 'Return to WikiContext' : 'Sign-in could not complete', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wikicontext.reader.auth')!).token)).toBe('synthetic-expired-token');
+    expect(apiRequests).toEqual([]);
+  });
+}

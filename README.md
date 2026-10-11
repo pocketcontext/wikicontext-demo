@@ -241,6 +241,10 @@ python3 tests/deploy_workflow.py
 After building the reader, install Chromium once and exercise the production
 assets against a synthetic isolated database:
 
+The public-demo browser fixture also requires nginx on PATH or at
+`/usr/sbin/nginx`. It exercises OAuth completion through the generated ingress
+configuration, including success/failure pages and continued administration denial.
+
 ```sh
 (cd ui && pnpm exec playwright install chromium)
 python3 tests/ui_browser.py --binary /absolute/path/to/pinned/pocketcontext

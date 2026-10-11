@@ -20,8 +20,10 @@ immutable reset fencing, writer leases, timeout drains and adopted descendants;
 and the inherited configuration, smoke and MinIO object-storage recovery gates.
 Application validation includes space roles and revocation, the reader browser
 suite, and public-demo onboarding with a synthetic Google provider and real
-enrollment APIs. The browser receives a synthetic session; this does not verify
-the external Google popup. Tests use isolated synthetic data only. All external actions are pinned to full commits.
+enrollment APIs. The demo browser fixture runs through the generated nginx gate,
+using synthetic sessions and a synthetic Google provider to exercise both OAuth
+completion redirects. This does not verify real Google admission. Tests use
+isolated synthetic data only. All external actions are pinned to full commits.
 
 ## Publication
 

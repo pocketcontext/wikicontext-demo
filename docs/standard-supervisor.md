@@ -101,6 +101,11 @@ after deployment; record that live evidence separately from synthetic tests.
 
 The public gate returns 404 for the PocketBase administration UI and named
 superuser collection routes. Operator maintenance uses the private control path.
+PocketBase's two OAuth completion redirects are rewritten to reader-owned
+completion pages. Those pages load without authentication-store initialization;
+the original tab completes sign-in independently through the SDK. The completion
+popup attempts to close itself and offers an explicit close button and fallback
+guidance when the browser prevents closure. The admin shell stays blocked.
 
 On termination, Go stops reporting ready and asks the worker to drain. The worker
 closes public ingress and gracefully stops application and contact processes,
