@@ -15,6 +15,7 @@ base images and Litestream checksums. Container gates:
 
 ```sh
 python3 docker/once_smoke.py --image wikicontext:ci
+python3 docker/standard_demo_smoke.py --image wikicontext:ci
 python3 docker/smoke.py config --image wikicontext:ci
 python3 docker/smoke.py smoke --image wikicontext:ci
 python3 docker/object_storage_smoke.py --image wikicontext:ci --minio-image wikicontext-minio-fixture:9e49d5e-7394ce0
@@ -22,12 +23,14 @@ python3 docker/object_storage_smoke.py --image wikicontext:ci --minio-image wiki
 
 ## Demo configuration
 
-ONCE supplies only `BASE_URL` and `WIKICONTEXT_DEMO_ONCE=true`. The supervisor
-refuses any origin other than an HTTPS `wiki-demo.*`, `demo-wiki.*` or
-`wikicontext-demo.*` host. Private bindings are sent once over the control socket
-(`control configure`, bounded JSON on stdin) and stored mode 0600 inside the
-volume; they never appear in ONCE labels, arguments, logs or Git. The required
-set is:
+The PocketDeploy application sets `BASE_URL` and `WIKICONTEXT_DEMO_ONCE=true`,
+with complete private parameter bindings. The supervisor refuses any origin other
+than an HTTPS `wiki-demo.*`, `demo-wiki.*` or `wikicontext-demo.*` host. Complete
+bindings establish private mode-0600 `control/runtime.json` on a fresh volume;
+existing bindings must match exactly. Partial or conflicting bindings fail closed.
+Private values may occur in container/ONCE metadata: inspect only explicitly
+allowlisted safe fields and never print environment variables or complete labels.
+The required set is:
 
 - `WIKICONTEXT_S3_{BUCKET,ENDPOINT,REGION,ACCESS_KEY_ID,SECRET_ACCESS_KEY}` for
   `pocketdeploy-v1-wikicontext-demo-files`;
@@ -52,10 +55,29 @@ reuse production `COLORS_PAR_APP_WIKICONTEXT_*` values. The supervisor sets
 `WIKICONTEXT_DEMO_CONTACT_URL=http://127.0.0.1:8781` and
 `WIKICONTEXT_TRUSTED_PROXY_HEADER=X-Forwarded-For` for its children.
 
-First installation, after the volume exists and bindings are configured, is
-`control initialize` (contacts init plus the first daily generation). Never
-initialize an existing volume or a populated replica; use `control adopt` with a
-verified three-database handoff for host moves.
+For a genuinely fresh installation, start ordinary PocketDeploy convergence and
+observe it while ONCE creates the application's named volume and container. The
+complete private environment establishes bindings; the new application remains
+fenced and `/up` returns 503 while awaiting explicit initialization. Through a
+separate operator SSH session, identify the exact Wiki Demo container using only
+allowlisted name/image/revision/state metadata. Confirm private control reports
+awaiting initialization, then execute inside that container:
+
+```sh
+python3 /usr/local/bin/wikicontext-demo-once.py control initialize
+python3 /usr/local/bin/wikicontext-demo-once.py control status
+```
+
+Require ready status, all three databases and successful PocketDeploy completion
+within the configured readiness budget. Do not run a second initialization
+container or guess ONCE's named volume. Initialization requires empty primary
+storage, no unfinished uploads and absent replicas; it does not purge populated
+storage. Never initialize an existing volume or replica to bypass failed recovery.
+
+See [application-owned supervisor](standard-supervisor.md) for compatibility,
+upgrade journaling, initialization, readiness and shutdown. Configure stop-first
+delivery and at least 900-second stop and readiness budgets. Fresh initialization
+is an operator action; ordinary reconciliation cannot initialize missing state.
 
 The inherited single-application container mode (without `WIKICONTEXT_DEMO_ONCE`)
 remains available for the container gates below and isolated development.
@@ -125,7 +147,7 @@ python3 docker/object_storage_smoke.py --image wikicontext:ci --minio-image wiki
 
 ## Updates
 
-Releases use only the restricted demo dispatcher described in
+Releases use standard PocketDeploy trigger-only reconciliation described in
 [CI and deployment](ci-and-deployment.md); ONCE automatic updates and backups stay
 disabled. `deploy/install.py`, `deploy/deploy-wikicontext.py` and
 `deploy/bootstrap-wikicontext.py` are retired and refuse execution. Container

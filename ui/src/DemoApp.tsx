@@ -190,7 +190,8 @@ export default function DemoApp({
       const aborted = (error as { isAbort?: boolean })?.isAbort;
       dispatch({
         type: "signin-failed",
-        message: aborted ? "Google sign-in cancelled. You can try again." : "Google sign-in was not completed. Please try again.",
+        message: error instanceof Error && (aborted || error.message === "Allow the sign-in popup, then try again.")
+          ? error.message : "Google sign-in was not completed. Please try again.",
       });
     });
   };

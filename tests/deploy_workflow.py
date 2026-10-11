@@ -25,13 +25,13 @@ class DeploymentTests(unittest.TestCase):
     def test_demo_cd_has_independent_gates_and_no_production_path(self):
         self.assertEqual(DEMO_DEPLOY.splitlines()[0].strip(), "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.WIKICONTEXT_DEMO_DEPLOY_ENABLED == 'true' && vars.WIKICONTEXT_DEMO_DEPLOY_PAUSED != 'true'")
         self.assertIn('    needs:\n      - demo_manifest\n', DEMO_DEPLOY)
-        self.assertIn('    environment:\n      name: wikicontext-demo\n', DEMO_DEPLOY)
+        self.assertIn('    environment:\n      name: pocketdeploy-v1\n', DEMO_DEPLOY)
         self.assertIn('      group: deploy-wikicontext-demo\n      cancel-in-progress: false', DEMO_DEPLOY)
-        self.assertIn('DEMO_DIGEST: ${{ needs.demo_manifest.outputs.digest }}', DEMO_DEPLOY)
+        self.assertNotIn('DEMO_DIGEST', DEMO_DEPLOY)
         self.assertNotIn('always()', DEMO_DEPLOY)
         self.assertNotIn(':latest', DEMO_DEPLOY)
         self.assertNotIn('COLORS_PROFILE', DEMO_DEPLOY)
-        self.assertLess(DEMO_DEPLOY.index('Require current demo deployment revision'), DEMO_DEPLOY.index('Deploy exact demo digest'))
+        self.assertLess(DEMO_DEPLOY.index('Require current demo deployment revision'), DEMO_DEPLOY.index('Reconcile configured demo'))
         self.assertNotIn('\n  deploy:', WORKFLOW)
         self.assertNotIn('\n  manifest:', WORKFLOW)
         self.assertNotIn('vars.WIKICONTEXT_PUBLISH', WORKFLOW)
@@ -43,12 +43,11 @@ class DeploymentTests(unittest.TestCase):
             self.assertNotIn(forbidden, WORKFLOW)
         import re
         self.assertEqual(set(re.findall(r'ghcr\.io/pocketcontext/[a-z-]+', WORKFLOW)), {'ghcr.io/pocketcontext/wikicontext-demo'})
-        self.assertEqual(re.findall(r'environment:\n\s+name: (\S+)', WORKFLOW), ['wikicontext-demo'])
+        self.assertEqual(re.findall(r'environment:\n\s+name: (\S+)', WORKFLOW), ['pocketdeploy-v1'])
         self.assertEqual(set(re.findall(r'secrets\.([A-Z_]+)', WORKFLOW)), {'GITHUB_TOKEN', 'SSH_PRIVATE_KEY'})
-        self.assertIn("'image': 'ghcr.io/pocketcontext/wikicontext-demo@' + digest", DEMO_DEPLOY)
 
-    def test_demo_ssh_exact_request_receipt_and_failures(self):
-        for mode in ('success', 'hostkey', 'digest', 'user', 'ssh', 'receipt'):
+    def test_demo_ssh_trigger_only_receipt_and_failures(self):
+        for mode in ('success', 'hostkey', 'host', 'user', 'ssh', 'receipt'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 for name in ('ssh-agent', 'ssh-add', 'ssh'):
@@ -58,73 +57,97 @@ class DeploymentTests(unittest.TestCase):
                         'name=Path(sys.argv[0]).name\n'
                         'if name=="ssh-add": sys.stdin.read()\n'
                         'if name=="ssh":\n'
-                        ' request=json.load(sys.stdin)\n'
+                        ' request=sys.stdin.read()\n'
                         ' Path(os.environ["TEST_CALL"]).write_text(json.dumps({"args":sys.argv[1:],"request":request}))\n'
                         ' if os.environ["TEST_MODE"]=="ssh":sys.exit(17)\n'
-                        ' if os.environ["TEST_MODE"]=="receipt":request["revision"]="b"*40\n'
-                        ' print(json.dumps({**request,"ready":True}))\n')
+                        ' print(json.dumps({"ok":os.environ["TEST_MODE"]!="receipt"}))\n')
                     path.chmod(0o700)
                 env = dict(os.environ, HOME=str(root), PATH=str(root)+':'+os.environ['PATH'],
-                           RUNNER_TEMP=str(root), SERVER_USER='wrong' if mode=='user' else 'deploy',
-                           SERVER_IP='192.0.2.1', SSH_PRIVATE_KEY='synthetic-secret',
+                           RUNNER_TEMP=str(root), SERVER_USER='-bad' if mode=='user' else 'ubuntu',
+                           SERVER_IP='bad host' if mode=='host' else '192.0.2.1', SSH_PRIVATE_KEY='synthetic-secret',
                            SSH_KNOWN_HOSTS='' if mode=='hostkey' else 'synthetic-host-key',
-                           DEMO_DIGEST='invalid' if mode=='digest' else 'sha256:'+'a'*64,
                            GITHUB_SHA='c'*40, TEST_CALL=str(root/'call'), TEST_MODE=mode)
-                result = subprocess.run(['bash','-c',demo_script('Deploy exact demo digest over restricted SSH', DEMO_DEPLOY)], env=env, capture_output=True, text=True)
+                result = subprocess.run(['bash','-c',demo_script('Reconcile configured demo over restricted SSH', DEMO_DEPLOY)], env=env, capture_output=True, text=True)
                 self.assertEqual(result.returncode==0, mode=='success', result.stderr)
                 self.assertNotIn('synthetic-secret',result.stdout+result.stderr)
-                if mode in ('hostkey','digest','user'):
+                if mode in ('hostkey','host','user'):
                     self.assertFalse((root/'call').exists())
                 else:
                     call=json.loads((root/'call').read_text())
-                    self.assertEqual(call['args'],['-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=15','deploy@192.0.2.1'])
-                    self.assertEqual(call['request'],{'revision':'c'*40,'image':'ghcr.io/pocketcontext/wikicontext-demo@sha256:'+'a'*64})
+                    self.assertEqual(call['args'],['-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=15','ubuntu@192.0.2.1'])
+                    self.assertEqual(call['request'], '')
 
-    def test_public_attestation_rejects_stale_pages_contracts_and_open_sql(self):
+    def test_public_attestation_rejects_stale_assets_contracts_and_open_sql(self):
+        import hashlib
         import io
         from unittest.mock import patch
         from datetime import datetime, timezone
         from urllib.error import HTTPError
-        program=demo_script('Attest demo status, installation and legal pages',DEMO_DEPLOY).split("python3 - <<'PY'\n",1)[1].rsplit('\nPY',1)[0]
+        program=demo_script('Verify running demo revision, assets and installation',DEMO_DEPLOY).split("python3 - <<'PY'\n",1)[1].rsplit('\nPY',1)[0]
         origin='https://wiki-demo.pocketcontext.com'
         pin='c'*40
         launcher='wikicontext-client = { git = "https://github.com/pocketcontext/wikicontext-demo.git", rev = "'+pin+'" }\n'
-        for mode in ('success','generation','legal','pin','foreign','unready','sql','root'):
-            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
-                work=Path(directory)
-                (work/'skills/wikicontext').mkdir(parents=True)
-                (work/'skills/wikicontext/wikicontext').write_text(launcher)
-                (work/'legal').mkdir()
-                for name in ('terms.html','privacy.html','legal.css'):
-                    (work/'legal'/name).write_bytes((ROOT/'legal'/name).read_bytes())
+        for mode in ('success','generation','legal','asset','pin','foreign','unready','sql','root','revision','changed','redirect','image_revision','pull'):
+            with self.subTest(mode=mode):
+                revision='d'*40  # Running revision can supersede the triggering checkout.
+                source='https://raw.githubusercontent.com/pocketcontext/wikicontext-demo/'+revision
                 installation={'method':'skills','skill':'wikicontext',
                     'source':'https://github.com/pocketcontext/wikicontext-demo/tree/main/skills/wikicontext',
                     'clientRevision':pin}
                 if mode=='foreign':installation['source']='https://foreign.example/skill'
                 if mode=='pin':installation['clientRevision']='0'*40
+                assets={'index.html':b'<!doctype html><script src="/assets/reader.js"></script>', 'assets/reader.js':b'const reader = true'}
                 responses={'/terms/':(ROOT/'legal/terms.html').read_bytes(),'/privacy/':(ROOT/'legal/privacy.html').read_bytes(),
-                           '/legal/legal.css':(ROOT/'legal/legal.css').read_bytes(),'/':b'<!doctype html><title>reader</title>'}
+                           '/legal/legal.css':(ROOT/'legal/legal.css').read_bytes(),'/':assets['index.html'], '/assets/reader.js':assets['assets/reader.js']}
+                source_responses={'/skills/wikicontext/wikicontext':launcher.encode()}
+                for path,name in (('/terms/','terms.html'),('/privacy/','privacy.html'),('/legal/legal.css','legal.css')):
+                    source_responses['/legal/'+name]=responses[path]
                 if mode=='legal':responses['/privacy/']=b'stale'
+                if mode=='asset':responses['/assets/reader.js']=b'stale'
                 if mode=='sql':responses['/api/context/schema']=b'{}'
                 if mode=='root':del responses['/']
-                status={'enabled':True,'clientReady':mode!='unready','generation':'2000-01-01' if mode=='generation' else datetime.now(timezone.utc).date().isoformat(),'installation':installation}
+                responses['/up']=json.dumps({'ready':mode!='unready','revision':'invalid' if mode=='revision' else revision}).encode()
+                status={'enabled':True,'clientReady':True,'generation':'2000-01-01' if mode=='generation' else datetime.now(timezone.utc).date().isoformat(),'installation':installation}
                 responses['/api/demo/status']=json.dumps(status).encode()
+                runtime_reads=0
+                docker_calls=[]
                 def fetch(request,timeout):
+                    nonlocal runtime_reads
                     self.assertEqual(request.get_header('User-agent'),'WikiContext-Demo-Release-Check/1.0')
                     url=request.full_url
-                    self.assertTrue(url.startswith(origin+'/'))
-                    path=url.removeprefix(origin)
-                    if path=='/api/context/schema' and path not in responses:raise HTTPError(url,401,'Unauthorized',{},None)
-                    if path not in responses:raise HTTPError(url,404,'Not found',{},None)
-                    data=io.BytesIO(responses[path]);data.status=200;data.geturl=lambda:url
+                    base=source if url.startswith(source+'/') else origin
+                    self.assertTrue(url.startswith(base+'/'))
+                    path=url.removeprefix(base)
+                    mapping=source_responses if base==source else responses
+                    if path=='/api/context/schema' and path not in mapping:raise HTTPError(url,401,'Unauthorized',{},None)
+                    if path not in mapping:raise HTTPError(url,404,'Not found',{},None)
+                    body=mapping[path]
+                    if path=='/up':
+                        runtime_reads+=1
+                        if mode=='changed' and runtime_reads%2==0:body=json.dumps({'ready':True,'revision':'e'*40}).encode()
+                    data=io.BytesIO(body);data.status=200;data.geturl=lambda:'https://foreign.example/' if mode=='redirect' else url
                     return data
-                with patch('urllib.request.urlopen',side_effect=fetch),patch('time.sleep'),patch('builtins.print'):
-                    original=os.getcwd();os.chdir(work)
-                    try:
-                        if mode=='success':exec(program,{})
-                        else:
-                            with self.assertRaises(SystemExit):exec(program,{})
-                    finally:os.chdir(original)
+                def docker(args,**kwargs):
+                    self.assertEqual(args[0],'docker');docker_calls.append(args[1:])
+                    output=''
+                    if args[1]=='pull':
+                        self.assertEqual(args[2],'ghcr.io/pocketcontext/wikicontext-demo:sha-'+revision)
+                        if mode=='pull':raise subprocess.CalledProcessError(1,args)
+                    elif args[1:3]==['image','inspect']:
+                        output='sha256:'+'f'*64 if args[-1]=='{{.Id}}' else ('e'*40 if mode=='image_revision' else revision)
+                    elif args[1]=='create':output='synthetic-container'
+                    elif args[1]=='cp':
+                        self.assertEqual(args[2],'synthetic-container:/app/ui/dist/.')
+                        for name,body in assets.items():
+                            path=Path(args[3])/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(body)
+                    elif args[1]!='rm':raise AssertionError(args)
+                    return subprocess.CompletedProcess(args,0,output,'')
+                with patch('urllib.request.urlopen',side_effect=fetch),patch('subprocess.run',side_effect=docker),patch('time.sleep'),patch('builtins.print'):
+                    if mode=='success':exec(program,{})
+                    else:
+                        with self.assertRaises(SystemExit):exec(program,{})
+                if mode in ('success','asset','sql','root','changed'):
+                    self.assertIn(['rm','synthetic-container'],docker_calls)
 
     def test_demo_publication_requires_main_and_successful_validation(self):
         build = PUBLICATION.split('  build:\n', 1)[1].split('  demo_manifest:\n', 1)[0]
@@ -209,6 +232,9 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn('runner: ubuntu-24.04', check)
         self.assertIn('python3 docker/once_smoke.py --image wikicontext:ci', check)
         self.assertIn("-p 'test_demo_*.py'", check)
+        self.assertIn('python3 docker/standard_demo_smoke.py --image wikicontext:ci', check)
+        self.assertIn('WIKICONTEXT_TEST_REQUIRE_NGINX=true', check)
+        self.assertIn('wikicontext:ci /tmp/test_demo_proxy_headers.py', check)
         self.assertIn('WIKICONTEXT_TEST_LITESTREAM="$RUNNER_TEMP/wikicontext-litestream"', check)
         for mode in (' config --image ', ' smoke --image '):
             self.assertIn(mode, check)

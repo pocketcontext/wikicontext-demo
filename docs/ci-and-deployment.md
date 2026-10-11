@@ -13,6 +13,8 @@ ARM64 Linux. Container checks are: entrypoint unit tests; image build; the demo
 lifecycle unit suite, backend demo suite and maintenance freeze using the
 image's own PocketContext and Litestream binaries; `docker/once_smoke.py` (control-only
 bootstrap, closed public gate, invalid bindings, exclusive volume, clean stop);
+the required in-image nginx test for Cloudflare IP handling and direct-origin spoof resistance;
+`docker/standard_demo_smoke.py` (standard replacement, populated recovery and fresh initialization);
 and the inherited configuration, smoke and MinIO object-storage recovery gates.
 Application validation includes space roles and revocation, the reader browser
 suite, and public-demo onboarding with a synthetic Google provider and real
@@ -33,32 +35,34 @@ Pull requests and other branches validate but cannot publish or deploy.
 
 `demo_deploy` runs after `demo_manifest` only when
 `WIKICONTEXT_DEMO_DEPLOY_ENABLED=true` and `WIKICONTEXT_DEMO_DEPLOY_PAUSED` is not
-`true`. It uses the fixed GitHub environment `wikicontext-demo`, which must be
-restricted to `main` and hold variables `SERVER_IP`, `SERVER_USER=deploy`,
-`SSH_KNOWN_HOSTS` and secret `SSH_PRIVATE_KEY` for a dedicated forced-command
-key. No production or VaultContext demo key is reused. Workflow and deployment
-concurrency never cancel an active release.
+`true`. It uses the GitHub environment `pocketdeploy-v1`, restricted to `main`,
+with `SERVER_IP`, the configured operator `SERVER_USER`, verified
+`SSH_KNOWN_HOSTS` and repository-specific restricted `SSH_PRIVATE_KEY`.
+Workflow and deployment concurrency never cancel an active release.
 
-Immediately before SSH the workflow rechecks current `main`. The key accepts no
-remote command; standard input is one bounded JSON object `{"image":"ghcr.io/pocketcontext/wikicontext-demo@sha256:<64 hex>","revision":"<40 hex>"}`
-taken from `demo_manifest`, never a mutable tag. No registry credentials, shell
-scripts, archives or application secrets are sent. The host dispatcher (not in
-this repository; to be modelled on `scripts/vaultcontext_demo_dispatch.py`) uses
-the ONCE CLI for the fixed `wiki-demo.pocketcontext.com` application: control
-`status` and `prepare-release` through `once exec … python3 /usr/local/bin/wikicontext-demo-once.py control`,
-`once stop`, `once update --image <digest> --auto-update=false --auto-backup=false`,
-then `validate-release` and `commit-release`, attempting `abort-release` on
-failure. It must return exactly `{"image":…,"revision":…,"ready":true}`; any
-other receipt fails the workflow. Whole-volume ONCE backups stay disabled
-because they would retain disposable wiki data alongside durable contacts.
+Immediately before SSH the workflow rechecks current `main`. The forced-command
+key accepts no remote command and empty standard input: it triggers standard
+PocketDeploy reconciliation of the host's configured application. No image request,
+registry credentials, shell scripts, archives or application secrets are sent.
+The host resolves its configured `latest` image to a digest at pull time and
+returns exactly `{"ok":true}`. This receipt confirms reconciliation, not a specific
+workflow revision; a newer validated image may have superseded the trigger.
+There is no application-specific host dispatcher or external prepare/commit flow.
+ONCE automatic updates and whole-volume backups stay disabled; PocketDeploy owns
+stop-first delivery, and the application supervisor owns upgrades and daily reset.
 
-The final public check requires today's UTC generation, `clientReady`, the exact
-installation contract from the packaged launcher, byte-equal legal pages
-(`/terms/`, `/privacy/`, `/legal/legal.css`), a reader root, and rejection of
-anonymous `/api/context/schema`. It does not perform Google sign-in or prove
-backup durability. No automatic rollback occurs; investigate the host's durable
-state before retrying. Main-revision checks reject stale reruns but do not lock
-Git refs; host-local locks are not distributed fencing; Litestream is asynchronous.
+Public attestation reads the ready runtime revision from `/up`, validates today's
+UTC generation and installation contract against that revision's published launcher,
+and compares legal pages against that revision's source. It pulls the release's
+`sha-<revision>` image, validates its OCI revision, extracts generated React assets
+without running the image, and compares every served asset byte for byte. It also
+requires rejection of anonymous `/api/context/schema`, no redirect to another
+origin, and unchanged runtime identity after verification. It does not perform
+Google sign-in or prove backup durability. `/up` alone is not release attestation.
+
+No automatic rollback occurs; investigate durable state before retrying a failed
+upgrade. Main-revision checks reject stale reruns but do not lock Git refs;
+host-local locks are not distributed fencing; Litestream is asynchronous.
 
 Old `deploy/install.py`, `deploy/deploy-wikicontext.py` and
 `deploy/bootstrap-wikicontext.py` fail closed. New provisioning, storage, OAuth,

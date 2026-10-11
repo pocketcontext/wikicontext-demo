@@ -64,23 +64,31 @@ RUN go build -trimpath -tags sqlite_math_functions,sqlite_percentile,sqlite_fts5
     && /out/pocketcontext --version
 
 
+WORKDIR /supervisor
+COPY supervisor/ ./
+RUN go test ./... && go build -trimpath -ldflags '-s -w' -o /out/demo-supervisor ./cmd/demo-supervisor
+
 FROM debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tini python3 python3-boto3 nginx \
     && rm -rf /var/lib/apt/lists/* \
     && test -x /usr/bin/tini
 
-COPY --from=build /out/pocketcontext /out/litestream /usr/local/bin/
+COPY --from=build /out/pocketcontext /out/litestream /out/demo-supervisor /usr/local/bin/
 COPY docker/litestream.yml /etc/litestream.yml
 COPY --chmod=0755 docker/entrypoint.py /usr/local/bin/wikicontext-entrypoint.py
 COPY --chmod=0755 deploy/demo/retention.py /usr/local/bin/wikicontext-demo-retention.py
 COPY --chmod=0755 deploy/demo/contact_replica.py /usr/local/bin/wikicontext-demo-contact-replica.py
 COPY --chmod=0755 deploy/demo/once_runtime.py /usr/local/bin/wikicontext-demo-once.py
+COPY deploy/demo/verify_compatibility.py /usr/local/lib/wikicontext-demo/verify_compatibility.py
+COPY deploy/demo/compatibility.json /usr/local/share/wikicontext-compatibility.json
 COPY deploy/demo/reset.py /usr/local/lib/wikicontext-demo/reset.py
 COPY deploy/demo/contact-litestream.yml /etc/wikicontext-demo-contacts-litestream.yml
 WORKDIR /app
 COPY POCKETCONTEXT_VERSION pocketcontext.json ./
 COPY pb_migrations/ ./pb_migrations/
+COPY deploy/demo/retention.py ./deploy/demo/retention.py
+RUN python3 /usr/local/lib/wikicontext-demo/verify_compatibility.py /usr/local/share/wikicontext-compatibility.json
 COPY pb_hooks/ ./pb_hooks/
 COPY --from=reader /ui/dist/ ./ui/dist/
 COPY legal/ ./legal/

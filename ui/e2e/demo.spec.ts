@@ -110,3 +110,121 @@ test("mobile layout, legal pages, unavailable and reset states", async ({ page, 
   await expect(page.getByText("Live demo unavailable. Nothing is saved on this page.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with Google", exact: true })).toBeDisabled();
 });
+
+// The Google navigation alone is intercepted: PocketBase's real callback,
+// realtime subscription, PKCE exchange and auth-store writes remain exercised.
+async function mockGoogle(context: import('@playwright/test').BrowserContext, request: APIRequestContext, name: string) {
+  await context.route('https://accounts.google.com/**', async route => {
+    const url = new URL(route.request().url());
+    const response = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + '/oauth-code?' + new URLSearchParams({
+      name, challenge: url.searchParams.get('code_challenge')!,
+    }));
+    expect(response.ok()).toBeTruthy();
+    const { code } = await response.json();
+    const callback = new URL(url.searchParams.get('redirect_uri')!);
+    callback.searchParams.set('code', code);
+    callback.searchParams.set('state', url.searchParams.get('state')!);
+    await route.fulfill({ status: 302, headers: { location: callback.href } });
+  });
+}
+
+test('Google popup callback persists login and localStorage.clear signs out other tabs', async ({ page, context, request }) => {
+  await mockGoogle(context, request, 'popup');
+  await page.goto('/#/page/preserved-destination');
+  const popupPromise = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
+  const popup = await popupPromise;
+  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeVisible();
+  await expect.poll(() => popup.isClosed()).toBeTruthy();
+  expect(await page.evaluate(() => !!JSON.parse(localStorage.getItem('wikicontext.reader.auth')!).token)).toBeTruthy();
+  await page.reload();
+  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeVisible();
+  await expect(page).toHaveURL(/#\/page\/preserved-destination$/);
+  const peer = await context.newPage();
+  await peer.goto('/');
+  await expect(peer.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeVisible();
+  await peer.evaluate(() => localStorage.clear());
+  await expect(page.getByRole('button', { name: 'Continue with Google', exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toHaveCount(0);
+});
+
+test('Google login works in memory when browser storage is blocked', async ({ page, context, request }) => {
+  await context.addInitScript(() => {
+    Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Blocked', 'SecurityError'); } });
+  });
+  await mockGoogle(context, request, 'blocked-storage');
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Continue with Google', exact: true })).toBeVisible();
+});
+
+test('blocked Google popup gives actionable retry guidance', async ({ page }) => {
+  await page.addInitScript(() => { window.open = () => null; });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
+  await expect(page.getByText('Allow the sign-in popup, then try again.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue with Google', exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => localStorage.getItem('wikicontext.reader.auth'))).toBeNull();
+});
+
+test('cancelling Google closes a pending provider popup', async ({ page, context }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let reached!: () => void;
+  const navigation = new Promise<void>(resolve => { reached = resolve; });
+  await context.route('https://accounts.google.com/**', async route => {
+    reached(); await held;
+    await route.abort().catch(() => {});
+  });
+  await page.goto('/');
+  const popupPromise = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
+  const popup = await popupPromise;
+  await navigation;
+  await page.getByRole('button', { name: 'Cancel Google sign-in', exact: true }).click();
+  release();
+  await expect.poll(() => popup.isClosed()).toBeTruthy();
+  await expect(page.getByText('Google sign-in cancelled. You can try again.', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('wikicontext.reader.auth'))).toBeNull();
+});
+
+test('Google timeout closes popup and permits another attempt', async ({ page, context }) => {
+  await context.route('https://accounts.google.com/**', route => route.fulfill({ contentType: 'text/html', body: '<p>Synthetic pending Google login</p>' }));
+  await page.clock.install();
+  await page.goto('/');
+  const popupPromise = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
+  const popup = await popupPromise;
+  await expect(page.getByRole('button', { name: 'Cancel Google sign-in', exact: true })).toBeVisible();
+  await page.clock.fastForward(180_001);
+  await expect(page.getByText('Google sign-in timed out. Please try again.', { exact: true })).toBeVisible();
+  await expect.poll(() => popup.isClosed()).toBeTruthy();
+  await expect(page.getByRole('button', { name: 'Continue with Google', exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => localStorage.getItem('wikicontext.reader.auth'))).toBeNull();
+});
+
+
+test('a late successful Google exchange cannot restore a cancelled session', async ({ page, context, request }) => {
+  await mockGoogle(context, request, 'late-exchange');
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let exchanged!: () => void;
+  const ready = new Promise<void>(resolve => { exchanged = resolve; });
+  await page.route('**/api/collections/users/auth-with-oauth2', async route => {
+    const response = await route.fetch();
+    expect(response.ok()).toBeTruthy();
+    exchanged(); await held;
+    await route.fulfill({ response }).catch(() => {});
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
+  await ready;
+  await page.getByRole('button', { name: 'Cancel Google sign-in', exact: true }).click();
+  release();
+  await expect(page.getByText('Google sign-in cancelled. You can try again.', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Continue with Google', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('wikicontext.reader.auth'))).toBeNull();
+});

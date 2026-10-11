@@ -64,8 +64,17 @@ jobs:
           python3 tests/maintenance.py --binary "$WIKICONTEXT_TEST_BINARY"
           python3 -m unittest discover -s tests -p 'test_demo_*.py'
           python3 tests/demo_backend.py --binary "$WIKICONTEXT_TEST_BINARY"
+      - name: Cloudflare client IP and direct-origin spoof resistance
+        run: |
+          docker run --rm --entrypoint python3 \
+            -e WIKICONTEXT_TEST_REQUIRE_NGINX=true \
+            -e WIKICONTEXT_TEST_ONCE_RUNTIME=/usr/local/bin/wikicontext-demo-once.py \
+            --mount type=bind,src="$PWD/tests/test_demo_proxy_headers.py",dst=/tmp/test_demo_proxy_headers.py,readonly \
+            wikicontext:ci /tmp/test_demo_proxy_headers.py
       - name: Native ONCE bootstrap and exclusive volume
         run: python3 docker/once_smoke.py --image wikicontext:ci
+      - name: Standard PocketDeploy lifecycle and populated recovery
+        run: python3 docker/standard_demo_smoke.py --image wikicontext:ci
       - name: Startup errors for missing configuration
         run: python3 docker/smoke.py config --image wikicontext:ci
       - name: Smoke test
@@ -213,16 +222,15 @@ jobs:
     needs:
       - demo_manifest
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Stop and readiness may each consume 15 minutes, plus pull and verification.
+    timeout-minutes: 60
     permissions:
       contents: read
     environment:
-      name: wikicontext-demo
+      name: pocketdeploy-v1
     concurrency:
       group: deploy-wikicontext-demo
       cancel-in-progress: false
-    env:
-      DEMO_DIGEST: ${{ needs.demo_manifest.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -237,7 +245,7 @@ jobs:
             echo 'Refusing stale demo deployment.' >&2
             exit 1
           fi
-      - name: Deploy exact demo digest over restricted SSH
+      - name: Reconcile configured demo over restricted SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SERVER_IP: ${{ vars.SERVER_IP }}
@@ -245,17 +253,13 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          test "$SERVER_USER" = deploy
           test -n "$SSH_KNOWN_HOSTS"
-          test -n "$SERVER_IP"
           python3 - <<'PY'
-          import json, os, re
-          from pathlib import Path
-          digest, revision = os.environ['DEMO_DIGEST'], os.environ['GITHUB_SHA']
-          if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest) or not re.fullmatch(r'[0-9a-f]{40}', revision):
-              raise SystemExit('Invalid demo release identity')
-          Path(os.environ['RUNNER_TEMP'], 'demo-request.json').write_text(json.dumps({
-              'image': 'ghcr.io/pocketcontext/wikicontext-demo@' + digest, 'revision': revision}) + '\n')
+          import os, re
+          if not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', os.environ['SERVER_USER']):
+              raise SystemExit('Invalid configured SSH operator account')
+          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.:-]*', os.environ['SERVER_IP']):
+              raise SystemExit('Invalid configured SSH host')
           PY
           umask 077
           mkdir -p ~/.ssh
@@ -263,10 +267,10 @@ jobs:
           eval "$(ssh-agent -s)" >/dev/null
           trap 'ssh-agent -k >/dev/null 2>&1 || true' EXIT
           printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - >/dev/null 2>&1
-          # The dedicated forced-command key reads a bounded release JSON request.
+          # The per-key forced command reconciles the host-configured latest image.
           # No remote command, registry credential, shell script or archive is sent.
           ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
-            "$SERVER_USER@$SERVER_IP" < "$RUNNER_TEMP/demo-request.json" > "$RUNNER_TEMP/demo-receipt.json"
+            "$SERVER_USER@$SERVER_IP" < /dev/null > "$RUNNER_TEMP/demo-receipt.json"
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -274,35 +278,38 @@ jobs:
           if len(raw) > 4096:
               raise SystemExit('Invalid demo release receipt')
           receipt = json.loads(raw)
-          expected = {'ready': True, 'revision': os.environ['GITHUB_SHA'],
-                      'image': 'ghcr.io/pocketcontext/wikicontext-demo@' + os.environ['DEMO_DIGEST']}
-          if receipt != expected or receipt.get('ready') is not True:
-              raise SystemExit('Demo release receipt differs from requested revision and digest')
+          if receipt != {'ok': True} or receipt.get('ok') is not True:
+              raise SystemExit('Invalid PocketDeploy reconciliation receipt')
           PY
-      - name: Attest demo status, installation and legal pages
+      - name: Verify running demo revision, assets and installation
         run: |
           python3 - <<'PY'
-          import hashlib, json, re, time
-          from datetime import datetime, timezone
+          import hashlib, json, re, subprocess, tempfile, time
           from pathlib import Path
+          from datetime import datetime, timezone
           from urllib.request import Request, urlopen
           from urllib.error import HTTPError
           origin = 'https://wiki-demo.pocketcontext.com'
-          def fetch(path, limit=4194304):
-              request = Request(origin + path, headers={'User-Agent': 'WikiContext-Demo-Release-Check/1.0'})
+          def fetch(path, limit=4194304, base=origin):
+              request = Request(base + path, headers={'User-Agent': 'WikiContext-Demo-Release-Check/1.0'})
               with urlopen(request, timeout=20) as response:
-                  if response.status != 200 or response.geturl() != origin + path:
+                  if response.status != 200 or response.geturl() != base + path:
                       raise ValueError('Unexpected public demo response')
                   body = response.read(limit + 1)
                   if len(body) > limit:
                       raise ValueError('Public artifact exceeds limit')
                   return body
           def verify():
+              runtime = json.loads(fetch('/up', 4096))
+              revision = runtime.get('revision', '')
+              if runtime.get('ready') is not True or not re.fullmatch(r'[0-9a-f]{40}', revision):
+                  raise ValueError('Public demo runtime is not ready')
+              source = 'https://raw.githubusercontent.com/pocketcontext/wikicontext-demo/' + revision
               status = json.loads(fetch('/api/demo/status', 32768))
               day = datetime.now(timezone.utc).date().isoformat()
               if status.get('enabled') is not True or status.get('clientReady') is not True or status.get('generation') != day:
                   raise ValueError('Public demo is not ready for the current UTC generation')
-              launcher = Path('skills/wikicontext/wikicontext').read_text()
+              launcher = fetch('/skills/wikicontext/wikicontext', 65536, base=source).decode()
               pin = re.search(r'wikicontext-demo\.git", rev = "([0-9a-f]{40})"', launcher).group(1)
               expected_installation = {'method': 'skills', 'skill': 'wikicontext',
                   'source': 'https://github.com/pocketcontext/wikicontext-demo/tree/main/skills/wikicontext',
@@ -310,24 +317,50 @@ jobs:
               if status.get('installation') != expected_installation:
                   raise ValueError('Unexpected public installation contract')
               for path, name in (('/terms/', 'terms.html'), ('/privacy/', 'privacy.html'), ('/legal/legal.css', 'legal.css')):
-                  if hashlib.sha256(fetch(path)).digest() != hashlib.sha256(Path('legal', name).read_bytes()).digest():
-                      raise ValueError('Public legal pages differ from the workflow revision')
-              if b'<!doctype html>' not in fetch('/').lower():
-                  raise ValueError('Reader root is unavailable')
+                  expected = fetch('/legal/' + name, base=source)
+                  if hashlib.sha256(fetch(path)).digest() != hashlib.sha256(expected).digest():
+                      raise ValueError('Public legal assets differ from the running revision')
+              # React assets are generated, so compare with the actual released image,
+              # not a new local build or the workflow's possibly superseded checkout.
+              image = 'ghcr.io/pocketcontext/wikicontext-demo:sha-' + revision
+              def docker(*args):
+                  return subprocess.run(['docker', *args], check=True, capture_output=True, text=True).stdout.strip()
+              docker('pull', image)
+              image_id = docker('image', 'inspect', image, '--format', '{{.Id}}')
+              if docker('image', 'inspect', image_id, '--format', '{{index .Config.Labels "org.opencontainers.image.revision"}}') != revision:
+                  raise ValueError('Released image revision mismatch')
+              container = docker('create', image_id)
+              try:
+                  with tempfile.TemporaryDirectory() as directory:
+                      docker('cp', container + ':/app/ui/dist/.', directory)
+                      if not Path(directory, 'index.html').is_file():
+                          raise ValueError('Released image has no reader entrypoint')
+                      for artifact in Path(directory).rglob('*'):
+                          if artifact.is_file():
+                              relative = artifact.relative_to(directory).as_posix()
+                              path = '/' if relative == 'index.html' else '/' + relative
+                              if hashlib.sha256(fetch(path)).digest() != hashlib.sha256(artifact.read_bytes()).digest():
+                                  raise ValueError('Public reader assets differ from released image')
+              finally:
+                  docker('rm', container)
               try:
                   fetch('/api/context/schema')
               except HTTPError as error:
+                  error.close()
                   if error.code not in (401, 403):
                       raise ValueError('Anonymous SQL schema was not rejected') from None
               else:
                   raise ValueError('Anonymous SQL schema is available')
+              if json.loads(fetch('/up', 4096)) != runtime:
+                  raise ValueError('Demo runtime changed during verification')
+              return revision
           for attempt in range(6):
               try:
-                  verify()
+                  revision = verify()
                   break
               except Exception:
                   if attempt == 5:
                       raise SystemExit('Public demo release attestation failed') from None
                   time.sleep(5)
-          print('Demo generation, installation contract, legal pages and anonymous SQL rejection verified')
+          print('Verified running demo revision ' + revision + ', UTC generation, assets, installation and anonymous SQL rejection')
           PY

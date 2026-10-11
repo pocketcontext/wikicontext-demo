@@ -9,7 +9,24 @@ import type {
 
 // The SDK synchronizes this application's credentials across same-origin tabs.
 const sessionKey = "wikicontext.reader.auth";
-const authStore = new LocalAuthStore(sessionKey);
+function browserAuthStore(): BaseAuthStore {
+  try {
+    const probe = `${sessionKey}.probe.${Math.random()}`;
+    window.localStorage.setItem(probe, "1");
+    window.localStorage.removeItem(probe);
+    return new LocalAuthStore(sessionKey);
+  } catch { return new BaseAuthStore(); }
+}
+const authStore = browserAuthStore();
+// The SDK handles named keys, but localStorage.clear() emits a null key.
+if (typeof window !== "undefined" && authStore instanceof LocalAuthStore) {
+  window.addEventListener("storage", (event) => {
+    if (event.storageArea !== window.localStorage) return;
+    // Even an empty-to-empty logout must fence a popup that is still signing in.
+    if (event.key === null || event.key === sessionKey) cancelGoogleLogin();
+    if (event.key === null) authStore.clear();
+  });
+}
 // Discard legacy per-tab credentials; never resurrect them after shared logout.
 try { window.sessionStorage.removeItem(sessionKey); } catch { /* Optional storage. */ }
 if (authStore.record?.collectionName !== "users" || !authStore.isValid) authStore.clear();
@@ -432,27 +449,60 @@ export async function getPage(
 }
 
 const googleRequestKey = "wikicontext-google-signin";
-let pendingSignIn: PocketBase | null = null;
+let pendingSignIn: { cancel: (message?: string) => void } | null = null;
 async function signIn(email?: string, password?: string): Promise<void> {
+  pendingSignIn?.cancel();
   const generation = sessionGeneration, token = authStore.token;
   const client = new PocketBase(pb.baseURL, new BaseAuthStore());
-  pendingSignIn = client;
+  const google = email === undefined;
+  // Open synchronously in the click handler, before provider discovery awaits.
+  const popup = google ? window.open("about:blank", "_blank", "popup,width=520,height=720") : null;
+  if (google && !popup) throw new Error("Allow the sign-in popup, then try again.");
+  let ended = false;
+  let rejectAttempt: (error: Error) => void = () => {};
+  const attempt = {
+    cancel(message = "Google sign-in cancelled. You can try again.") {
+      if (ended) return;
+      ended = true;
+      client.cancelRequest(googleRequestKey);
+      popup?.close();
+      rejectAttempt(Object.assign(new Error(message), { isAbort: true }));
+    },
+  };
+  pendingSignIn = attempt;
+  const timeout = google ? window.setTimeout(() => attempt.cancel("Google sign-in timed out. Please try again."), 180000) : undefined;
   try {
-    const auth = client.collection("users");
-    const result = email === undefined
-      ? await auth.authWithOAuth2({ provider: "google", requestKey: googleRequestKey })
-      : await auth.authWithPassword(email, password!);
-    if (generation !== sessionGeneration || token !== authStore.token) throw new Error("Session changed");
+    const result = await new Promise<RecordAuthResponse>((resolve, reject) => {
+      rejectAttempt = reject;
+      const auth = client.collection("users");
+      const response = google
+        ? auth.authWithOAuth2({
+          provider: "google", requestKey: googleRequestKey,
+          urlCallback(url) {
+            if (ended) throw new Error("Sign-in ended");
+            const destination = new URL(url);
+            if (destination.protocol !== "https:" || destination.hostname !== "accounts.google.com" || destination.username || destination.password)
+              throw new Error("Unexpected Google authorization configuration.");
+            popup!.location.href = destination.href;
+          },
+        })
+        : auth.authWithPassword(email!, password!);
+      response.then(resolve, reject);
+    });
+    if (ended || pendingSignIn !== attempt || generation !== sessionGeneration || token !== authStore.token) throw new Error("Session changed");
     if (result.record.collectionName !== "users") throw new Error("Invalid workspace identity");
     authStore.save(result.token, result.record);
   } finally {
-    if (pendingSignIn === client) pendingSignIn = null;
+    ended = true;
+    clearTimeout(timeout);
+    popup?.close();
+    if (pendingSignIn === attempt) pendingSignIn = null;
     await client.realtime.unsubscribe();
   }
 }
 export async function loginGoogle(): Promise<void> { await signIn(); }
-/** Cancels a pending Google popup sign-in; the SDK closes its popup and stream. */
-export function cancelGoogleLogin(): void { pendingSignIn?.cancelRequest(googleRequestKey); }
+/** Cancel discovery, the realtime wait or exchange and fence late responses. */
+export function cancelGoogleLogin(): void { pendingSignIn?.cancel(); }
 export async function loginPassword(email: string, password: string): Promise<void> { await signIn(email, password); }
 let refreshedAt = 0;
 let refreshedToken = "";
@@ -481,6 +531,7 @@ export async function refreshSession(): Promise<void> {
   }
 }
 export function logout(): void {
+  cancelGoogleLogin();
   pb.authStore.clear();
 }
 export async function originalURL(source: Source): Promise<string> {

@@ -67,14 +67,15 @@ Commands run through `uv run --locked python` from the application repository:
 
 ## Browser checks
 
-Reader typecheck, build and 80 unit tests passed. The isolated actual-server
+The initial reader typecheck, build and 80 unit tests passed. The isolated actual-server
 browser suites passed 11 reader scenarios and two demo scenarios, including
 mobile layout, keyboard navigation, enrollment, live private search, account
 isolation, conflict/reset UI and the unready-client state.
 
 The demo browser fixture advertises a synthetic launcher pin to exercise setup,
 not to establish shipped-client readiness. It exchanges OAuth against a synthetic
-provider and injects the returned session; the external popup is excluded.
+provider and injects the returned session in those initial scenarios; popup-flow
+coverage added later is recorded below.
 Conflict and reset UI responses are mocked, while `demo_backend.py` tests those
 server boundaries directly. CI requires both browser suites on both architectures.
 
@@ -144,3 +145,47 @@ comparator mounted tests at a path without the application configuration.
 Fixtures now create separate bucket-scoped users, check cross-bucket denial,
 and mount recovery tests under `/app/tests`. No runtime protection was relaxed.
 Native AMD64 results and exact committed-source image results remain CI gates.
+
+## Browser login hardening
+
+The subsequent browser-auth changes passed Node.js 24 typecheck, production
+build and 94 unit tests. Both isolated browser suites passed: 11 reader scenarios
+and eight demo scenarios. The demo suite now clicks the Google button and
+exercises the SDK's real realtime callback and PKCE exchange against a synthetic
+provider. It checks persistent login, cross-tab storage clearing, memory-only
+login when storage is blocked, blocked-popup guidance, cancellation, the
+three-minute timeout and a delayed successful exchange after cancellation.
+Unit tests also cover unsafe provider URLs and another tab logging out while
+an anonymous popup is pending. No real Google account or consent screen was used.
+
+All 28 README backend/client validation commands and `tests/demo_backend.py`
+passed again with the pinned reviewed server after `uv sync --locked`.
+These changes have local validation; the previously recorded container image
+predates them and must be rebuilt through the release gates before deployment.
+
+## Standard PocketDeploy release preparation — 11 October 2026
+
+The preserved browser-auth changes passed Node.js 24 typecheck, 94 unit tests,
+production build, all eight demo browser scenarios and all eleven reader scenarios.
+All 28 README backend/client commands and demo_backend.py passed again against
+the pinned reviewed server after locked dependency synchronization. These use
+synthetic isolated data and do not prove live Google sign-in.
+
+The application-owned standard supervisor replaces external release orchestration.
+Its compatibility fingerprint includes the pinned server, migrations and durable
+contact schema owner. Fresh environment binding, exact persisted-binding equality,
+truthful readiness, explicit initialization, stop-first upgrade and fail-closed
+interruption recovery are covered. Native ARM64 Docker validation includes
+bootstrap/exclusive volume, missing-configuration refusal, graceful shutdown,
+protected originals and strict replica recovery, plus populated standard
+replacement preserving publications, originals and withdrawn contact preferences.
+Real nginx tests cover the trusted Cloudflare/ONCE header chain assumptions.
+Both architectures must pass the new committed-source CI before live rollout.
+Workflow tests and actionlint passed for standard restricted GitHub delivery.
+
+The operator confirmed the existing operator/contact details and demo quotas.
+The existing OCI host was reachable with refreshed credentials; safe metrics
+showed about 5 GiB available RAM and 43 GiB free disk before adding Wiki Demo.
+Vault Demo remained healthy with no pending operations. Live Wiki Demo resource
+creation, OAuth sign-in, midnight observation and provider recovery are separate
+release evidence and must not be inferred from these local checks.

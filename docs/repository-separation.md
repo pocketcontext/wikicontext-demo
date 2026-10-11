@@ -7,8 +7,8 @@ upstream remote is named `upstream-local`. The client command and skill remain
 `wikicontext`; repository ownership does not rename the user interface.
 
 The demo has independent CI, image publication (`ghcr.io/pocketcontext/wikicontext-demo`)
-and deployment controls (GitHub environment `wikicontext-demo`, restricted to
-`main`; its forced-command deployment key is still pending). The skill installs from
+and deployment controls (GitHub environment `pocketdeploy-v1`, restricted to
+`main`; a repository-specific forced-command key triggers standard reconciliation). The skill installs from
 `https://github.com/pocketcontext/wikicontext-demo/tree/main/skills/wikicontext`.
 Core WikiContext production remains independently owned by `pocketcontext/wikicontext`
 and its `once-v2` deployment; this repository contains no path to it.
@@ -56,5 +56,20 @@ and vice versa, recording the source commit.
    native CI passes.
 3. Provision the OAuth client, DNS record, three buckets and three credentials;
    register each as WikiContext resource/credential entity pages.
-4. Write, review and install the WikiContext demo dispatcher and key on the host.
-5. Configure and `initialize` the ONCE volume, then enable publication and CD.
+4. Configure standard PocketDeploy delivery and its repository-specific restricted key.
+5. Converge through PocketDeploy, explicitly initialize the fresh application while readiness waits, and verify before enabling CD.
+
+## Release review: standard delivery, 11 October 2026
+
+Core WikiContext reviewed through `7cf5d4548fd22a7cb250adbd4034f1060c9bd53e`,
+which is also this fork's upstream merge base: no later local upstream changes
+were pending. Remote `main` was checked with `git ls-remote` on 11 October 2026
+and matched both reviewed revisions. Production deployment remains excluded.
+
+VaultContext Demo reviewed through `194f72490fd27558fadacb20e58d93a981ebc76c`.
+Adopt application-owned standard supervision from `153a3a7` and verified proxy
+header handling from `194f724`, preserving WikiContext's independent schema,
+three-database lifecycle and original-file checks. Browser popup cancellation,
+timeout and late-session handling affect shared authentication and should be
+reviewed independently for core WikiContext adoption; demo enrollment and reset
+behavior remain fork-only. Passing demo validation does not validate core.

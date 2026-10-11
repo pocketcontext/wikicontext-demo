@@ -28,3 +28,8 @@ ui/**
 !deploy/demo/once_runtime.py
 !deploy/demo/reset.py
 !skills/wikicontext/wikicontext
+
+!supervisor/
+!supervisor/**
+!deploy/demo/verify_compatibility.py
+!deploy/demo/compatibility.json

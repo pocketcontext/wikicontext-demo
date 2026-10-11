@@ -73,10 +73,18 @@ rendering and the PocketBase SDK. Content reads use authenticated SQL; the SDK
 handles ordinary user authentication, protected file tokens and SSE notifications.
 The official PocketBase SDK LocalAuthStore keeps the application token in local
 storage under `wikicontext.reader.auth`, shared across tabs and browser restarts.
+If browser storage is blocked, login uses memory only and a page reload requires
+sign-in again. Clearing site storage in another tab also clears the active session.
 Logout synchronizes across tabs and clears reader state and subscriptions; account
 changes discard pending responses and private views. Tokens remain accessible to
 same-origin JavaScript. Active sessions renew at most every five minutes. Legacy
 per-tab credentials are discarded, so the first visit after upgrading requires login. No provider secret is shipped to the browser.
+
+Google login opens a popup from the sign-in button, retains the SDK's state and
+PKCE checks, and expires after three minutes. Blocked popups show retry guidance;
+visitors can cancel a pending attempt. Cancelled or expired attempts cannot save
+a late session. The browser callback is `/api/oauth2-redirect`; CLI login uses
+the separately registered loopback callback.
 
 With Node.js 24 and pnpm 10.33.2:
 
@@ -247,8 +255,8 @@ Regenerate the SQL reference only after reviewing intentional changes:
 `tests/skill.py --binary ... --write-schema`. Container CI additionally runs
 configuration, persistence, crash restore and graceful shutdown checks.
 Main-branch image publication requires the application and native container
-gates plus `WIKICONTEXT_DEMO_PUBLISH=true`; deployment uses the separate
-`wikicontext-demo` environment and demo deployment variables. See
+gates plus `WIKICONTEXT_DEMO_PUBLISH=true`; deployment uses the repository-specific
+`pocketdeploy-v1` environment and demo deployment variables. See
 [the release contract](docs/ci-and-deployment.md) and
 [current validation evidence](docs/demo-validation.md).
 
@@ -331,7 +339,7 @@ and deletes its own object to prove verification fails closed.
 The separate experiment workflow was removed upstream. The retained verification
 tools below target historical production infrastructure and must not be used to
 validate this demo. They are not automatic deployment paths or authorization to
-modify a live service. Demo releases use the `wikicontext-demo` environment. See the
+modify a live service. Demo releases use the `pocketdeploy-v1` environment. See the
 [common CI and deployment contract](docs/ci-and-deployment.md).
 
 For the standalone recovery test, set disposable MinIO S3 and Litestream settings
