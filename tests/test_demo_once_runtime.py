@@ -93,8 +93,11 @@ class LocalBackend:
         self.events.append(('gate', opened))
         self.opened = opened
 
-    def healthy(self):
+    def children_alive(self):
         return self.app and self.contacts
+
+    def healthy(self):
+        return self.children_alive()
 
     def require_empty_primary(self):
         self.events.append(('check-empty-primary',))
@@ -393,6 +396,44 @@ class OnceRuntimeStateTests(unittest.TestCase):
         self.assertTrue(value.status()['ready'])
         self.assertEqual(sum(event == ('purge',) for event in backend.events), 1)
 
+    def test_internal_probe_token_matches_child_environment_and_rotates(self):
+        import io
+        from unittest.mock import Mock, patch
+        backend = self.module.Backend(self.root, 'https://synthetic.invalid')
+        backend.configure(fixture_bindings())
+        backend.processes = {name: Mock(poll=Mock(return_value=None)) for name in ('app', 'contacts')}
+        responses = [io.BytesIO(json.dumps({'enabled': True, 'generation': self.module.utc_day()}).encode()),
+                     io.BytesIO(b'{"ready":true}')]
+        with patch.object(self.module, 'urlopen', side_effect=responses) as opener:
+            self.assertTrue(backend.healthy())
+        request = opener.call_args_list[0].args[0]
+        self.assertEqual(request.get_header('X-wikicontext-health-token'),
+                         backend.app_env(self.day[0])['WIKICONTEXT_DEMO_HEALTH_TOKEN'])
+        self.assertNotIn('WIKICONTEXT_DEMO_HEALTH_TOKEN', backend.bindings)
+        self.assertNotEqual(backend.health_token, self.module.Backend(self.root, 'https://synthetic.invalid').health_token)
+
+    def test_healthy_probes_wait_ten_seconds_but_child_exit_is_immediate(self):
+        from unittest.mock import patch
+        value, backend = self.populated()
+        value.minute = lambda: 0
+        now = [0.]
+        value.monotonic = lambda: now[0]
+        with patch.object(backend, 'healthy', return_value=True) as health:
+            value.tick()
+            for tick in range(1, 50):
+                now[0] = tick*.2
+                value.tick()
+            health.assert_called_once()
+            now[0] = 10.
+            value.tick()
+            self.assertEqual(health.call_count, 2)
+            now[0] = 10.2
+            backend.app = False
+            with self.assertRaises(self.module.RuntimeErrorSafe):value.tick()
+            self.assertEqual(health.call_count, 2)
+            self.assertFalse(value.ready or backend.opened or backend.contacts)
+            self.assertEqual(value.phase, 'blocked')
+
     def test_probe_crossing_midnight_resets_instead_of_blocking(self):
         value, backend = self.populated()
         before = backend.contents()
@@ -426,6 +467,12 @@ class OnceRuntimeStateTests(unittest.TestCase):
         now[0] = 2.
         value.tick()
         self.assertEqual(value.health_failures, 0)
+        now[0] = 11.8
+        value.tick()
+        self.assertEqual(probes, [0., 2.])
+        now[0] = 12.
+        value.tick()
+        self.assertEqual(probes, [0., 2., 12.])
         self.assertTrue(backend.opened and backend.app and backend.contacts)
 
     def test_repeated_probe_failure_exits_and_stale_restart_resets(self):

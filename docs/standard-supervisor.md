@@ -88,8 +88,11 @@ stopping and stale-generation states are not ready. Other public routes remain
 closed until the worker has completed verification. A process merely being alive
 is insufficient for deployment success.
 
-The worker probes application and contact readiness every two seconds after the
-previous probe completes. A successful probe clears the failure count. Three
+The worker probes application and contact readiness ten seconds after a successful
+probe completes and retries failed probes after two seconds, using a monotonic
+clock. Startup probes immediately. Child exits and UTC expiry are checked every
+200 ms; a child exit immediately drains the writers and terminates the worker.
+A successful probe clears the failure count. Three
 consecutive failures close ingress, drain both writers and terminate the worker
 with a failed exit so the container restart policy can run normal startup. A
 failed probe does not leave a live, permanently blocked reset scheduler. The UTC
@@ -98,6 +101,13 @@ probe crossing midnight takes the reset path immediately. Release, adoption and
 upgrade fences retain their existing operator-review requirements. Verify the
 container restart policy during rollout and observe the next real midnight reset
 after deployment; record that live evidence separately from synthetic tests.
+
+Each worker generates a private memory-only token for its application child and
+loopback status probe. Successful status requests skip activity logging only
+when the token matches and the transport peer is loopback. Failed probes, public
+requests and invalid tokens retain normal logging. The token grants no record
+access and is not persisted in runtime bindings. This reduces auxiliary replica
+growth without removing request failures or changing daily data retention.
 
 The public gate returns 404 for the PocketBase administration UI and named
 superuser collection routes. Operator maintenance uses the private control path.

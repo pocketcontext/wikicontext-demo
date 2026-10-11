@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sqlite3
 import sys
 import tempfile
 import urllib.error
@@ -69,6 +70,40 @@ def check_installation(binary, day):
                 assert status['clientReady'] is False and status['installation'] is None, status
 
 
+def check_health_probe_logs(binary, day):
+    probe_token = secrets.token_urlsafe(32)
+    with tempfile.TemporaryDirectory(prefix='wiki-demo-probe-logs-') as temporary, fx.contacts() as (url, token, _), fx.app_tree() as app:
+        data_dir = Path(temporary) / 'pb_data'
+        env = environment(url, token, day)
+        env['WIKICONTEXT_DEMO_HEALTH_TOKEN'] = probe_token
+        (app / 'pb_hooks/probe_failure.pb.js').write_text("""
+routerUse(new Middleware((e) => {
+ if (e.request.url.path === '/api/demo/status' && e.request.url.query().get('syntheticFailure') === '1')
+  throw new ApiError(503, 'Synthetic health failure', {});
+ return e.next();
+}, 1));
+""")
+        cases = [('internal', {'X-WikiContext-Health-Token': probe_token}, 200),
+                 ('external', {}, 200),
+                 ('forwarded', {'X-Forwarded-For': '127.0.0.1'}, 200),
+                 ('wrong-token', {'X-WikiContext-Health-Token': 'synthetic-wrong-token'}, 200),
+                 ('failure', {'X-WikiContext-Health-Token': probe_token}, 503)]
+        with fx.server(binary, app, env, data_dir=data_dir) as request:
+            for name, headers, expected in cases:
+                path = '/api/demo/status?probeCase=' + name
+                if name == 'failure':
+                    path += '&syntheticFailure=1'
+                request('GET', path, headers=headers, expected=expected)
+        # Graceful shutdown flushes logs. This database contains synthetic data only.
+        with sqlite3.connect('file:' + str(data_dir / 'auxiliary.db') + '?mode=ro', uri=True) as database:
+            logs = [json.loads(row[0]) for row in database.execute('SELECT data FROM _logs')]
+        urls = [entry.get('url', '') for entry in logs]
+        for name, _, _ in cases:
+            matching = [url for url in urls if 'probeCase=' + name in url]
+            assert len(matching) == (0 if name == 'internal' else 1), (name, matching, urls)
+        assert probe_token not in json.dumps(logs), 'Probe token leaked into logs'
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', required=True)
@@ -79,6 +114,7 @@ def main():
         print('NOTE: repository pocketcontext.json lacks the demo filtered-snapshot policy; using a test-only derivative')
     if not fx.HAS_SPACES:
         print('NOTE: pb_hooks/spaces.js absent; enrollment uses a test stub and REST cross-visitor isolation is skipped')
+    check_health_probe_logs(args.binary, day)
     check_installation(args.binary, day)
 
     with fx.contacts() as (contact_url, contact_token, store), google_fixture() as (provider_url, codes), \

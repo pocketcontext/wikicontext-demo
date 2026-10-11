@@ -7,7 +7,8 @@ onBootstrap((e) => {
 });
 // After account_access.js (-1019) has rejected revoked sessions.
 routerUse(new Middleware((e) => require(`${__hooks}/demo.js`).guard(e), -1018));
-routerAdd('GET', '/api/demo/status', (e) => require(`${__hooks}/demo.js`).status(e));
+routerAdd('GET', '/api/demo/status', (e) => require(`${__hooks}/demo.js`).status(e),
+ new Middleware((e) => require(`${__hooks}/demo.js`).healthProbeLog(e)));
 routerAdd('GET', '/api/demo/preferences', (e) => require(`${__hooks}/demo.js`).preferences(e));
 routerAdd('GET', '/api/demo/enrollment', (e) => require(`${__hooks}/demo.js`).enrollmentStatus(e));
 routerAdd('POST', '/api/demo/enroll', (e) => require(`${__hooks}/demo.js`).enroll(e));

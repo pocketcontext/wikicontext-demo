@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import signal
 import socket
@@ -151,6 +152,7 @@ class Backend:
     """Local child processes only. No container API, Docker CLI, or ONCE recursion."""
     def __init__(self,root,origin):
         self.root=Path(root);self.origin=origin;self.bindings={};self.processes={};self.lease=None
+        self.health_token=secrets.token_urlsafe(32)
         self.entrypoint='/usr/local/bin/wikicontext-entrypoint.py'
         self.contacts='/usr/local/bin/wikicontext-demo-contact-replica.py'
         self.nginx='/usr/sbin/nginx'
@@ -237,6 +239,7 @@ class Backend:
         env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':str(self.root/'runtime'),**{k:v for k,v in self.bindings.items() if not k.startswith('CONTACTS_LITESTREAM_')}}
         env.update(WIKICONTEXT_DEMO_MODE='true',WIKICONTEXT_DEMO_ONCE='true',WIKICONTEXT_DEMO_ONCE_CHILD='app',
                    WIKICONTEXT_DEMO_ONCE_ROOT=str(self.root),WIKICONTEXT_DEMO_GENERATION=day,
+                   WIKICONTEXT_DEMO_HEALTH_TOKEN=self.health_token,
                    WIKICONTEXT_DEMO_RESET_FENCE=str(self.root/'control/reset-pending.json'),BASE_URL=self.origin,
                    WIKICONTEXT_DEMO_CONTACT_URL='http://127.0.0.1:8781',WIKICONTEXT_TRUSTED_PROXY_HEADER='X-Forwarded-For')
         return env
@@ -259,11 +262,15 @@ class Backend:
         if initialize:self.execute(args+['init'],env)
         self.launch('contacts',args+['start'],env)
     def stop_contacts(self):self.stop('contacts')
-    def healthy(self):
+    def children_alive(self):
         for name in ('app','contacts'):
             if name not in self.processes or self.processes[name].poll() is not None:return False
+        return True
+    def healthy(self):
+        if not self.children_alive():return False
         try:
-            with urlopen('http://127.0.0.1:8081/api/demo/status',timeout=2) as response:value=json.load(response)
+            probe=Request('http://127.0.0.1:8081/api/demo/status',headers={'X-WikiContext-Health-Token':self.health_token})
+            with urlopen(probe,timeout=2) as response:value=json.load(response)
             request=Request('http://127.0.0.1:8781/health',headers={'Authorization':'Bearer '+self.bindings['WIKICONTEXT_DEMO_CONTACT_TOKEN']})
             with urlopen(request,timeout=2) as response:contact=json.load(response)
             return value.get('enabled') is True and value.get('generation')==utc_day() and contact.get('ready') is True
@@ -590,9 +597,12 @@ class Runtime:
     def tick(self):
         with self.mutex:
             if self.ready and self.generation!=self.clock():self.reset_day()
+            elif self.ready and not self.backend.children_alive():
+                self.drain();self.phase='blocked'
+                raise RuntimeErrorSafe('child exit requires runtime restart')
             elif self.ready and self.monotonic()>=self.next_health:
                 healthy=self.backend.healthy()
-                self.next_health=self.monotonic()+2.
+                self.next_health=self.monotonic()+(10. if healthy else 2.)
                 # A probe can straddle midnight. Expiration is a reset, not an
                 # unhealthy same-day writer; check again after both HTTP calls.
                 if self.generation!=self.clock():self.reset_day()

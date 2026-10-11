@@ -147,6 +147,16 @@ function publicInstallation() {
    skill: 'wikicontext', clientRevision: match[1]};
  } catch (_) { return false; }
 }
+// The supervisor generates this private token for its own loopback probes.
+// Proxy-derived realIP and user-agent headers are not authentication.
+function healthProbeLog(e) {
+ const token = $os.getenv('WIKICONTEXT_DEMO_HEALTH_TOKEN') || '';
+ if (enabled() && token.length >= 32 &&
+     /^(127\.0\.0\.1|\[::1\]):[0-9]+$/.test(e.request.remoteAddr) &&
+     e.request.header.get('X-WikiContext-Health-Token') === token)
+  return $apis.skipSuccessActivityLog().func(e);
+ return e.next();
+}
 function status(e) {
  e.response.header().set('Cache-Control', 'no-store');
  if (!enabled()) return e.json(200, {enabled: false});
@@ -368,5 +378,5 @@ function legal(e, file) {
  return e.fileFS($os.dirFS('legal'), file);
 }
 module.exports = {TERMS, LIMITS, COUNTED, SPACE_ADMIN, DIRECTORY_FILTERS, enabled, current, bootstrap, checkConfig,
- status, preferences, enrollmentStatus, enroll, unsubscribe, recordRequest, recordExecute, spaceAdministration,
+ healthProbeLog, status, preferences, enrollmentStatus, enroll, unsubscribe, recordRequest, recordExecute, spaceAdministration,
  guard, realtime, rejectAlternativeAuth, userCreate, legal};
