@@ -1,5 +1,32 @@
 # WikiContext Demo deployment record
 
+## OAuth callback fix — 11 October 2026
+
+- Source: `9527f958673908767b86f010a35fd5facb386da8`.
+- Published image: `ghcr.io/pocketcontext/wikicontext-demo@sha256:a655639f3ecfb3273c8a1c87b89d7fc48a6dbb9048456c4dd22315b2622ff161`.
+- Native AMD64/ARM64 application and container checks, publication, deployment
+  and public asset attestation passed in
+  [run 38138806535](https://github.com/pocketcontext/wikicontext-demo/actions/runs/38138806535).
+
+The ingress now rewrites only PocketBase's two OAuth completion redirects to
+reader-owned completion pages, preserving the administration block. Completion
+pages do not initialize authentication storage and attempt popup self-close.
+The original tab independently completes the SDK authentication exchange.
+
+Local validation passed 100 UI unit tests, typecheck/build, 12 demo browser tests
+through generated nginx ingress, 11 reader browser tests, 10 proxy regressions,
+8 deployment-workflow checks and 139 lifecycle tests (7 root-only checks skipped
+locally). CI passed its complete architecture-specific release gates.
+
+Independent public checks confirmed the exact ready revision, current UTC
+generation, Google enabled and password authentication disabled. Administration
+and superuser routes remained 404. An invalid-state OAuth callback redirected to
+`/#/auth/oauth2-redirect-failure` instead of the blocked admin shell. Live Chromium
+checks rendered both completion outcomes with HTTP 200, preserved synthetic
+browser-local authentication storage, made zero API requests and reported no
+page errors. No live application records were changed. Real Google sign-in still
+requires an interactive user retry; synthetic OAuth coverage is not that proof.
+
 ## Audit remediation release — 11 October 2026
 
 - Source: `9f237178a9f8187df4336962b1348b1135776b88`.
