@@ -202,6 +202,14 @@ def main():
                 current=prefix+'-candidate-'+str(index);launch(current,candidate_image)
                 client.base=ready(current,next_revision)
                 s.check_records(client,document,metadata)
+                for _ in range(2):
+                    status,_,_=s.http('POST',client.base+'/api/context/query',{'sql':'SELECT id FROM pages LIMIT 1'},token=client.token)
+                    if status!=200:raise Failure('synthetic snapshot warmup failed')
+                cache_check=docker('exec',current,'python3','-c',
+                    'from pathlib import Path; import sys; '
+                    'sys.exit(0 if list(Path("/storage/runtime/run").glob("pocketcontext-snapshot-*/request-*/snapshot.db")) '
+                    'and not list(Path("/tmp").glob("pocketcontext-snapshot-*")) else 1)',required=False)
+                if cache_check.returncode:raise Failure('SQL cache escaped disposable runtime storage')
                 status,_,preferences=s.http('GET',client.base+'/api/demo/preferences',token=client.token)
                 if status!=200 or preferences['salesContact'] or preferences['newsletter']:
                     raise Failure('withdrawn contact preferences changed')

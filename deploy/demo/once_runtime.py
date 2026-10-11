@@ -238,6 +238,7 @@ class Backend:
     def app_env(self,day):
         env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':str(self.root/'runtime'),**{k:v for k,v in self.bindings.items() if not k.startswith('CONTACTS_LITESTREAM_')}}
         env.update(WIKICONTEXT_DEMO_MODE='true',WIKICONTEXT_DEMO_ONCE='true',WIKICONTEXT_DEMO_ONCE_CHILD='app',
+                   TMPDIR=str(self.root/'runtime/run'),
                    WIKICONTEXT_DEMO_ONCE_ROOT=str(self.root),WIKICONTEXT_DEMO_GENERATION=day,
                    WIKICONTEXT_DEMO_HEALTH_TOKEN=self.health_token,
                    WIKICONTEXT_DEMO_RESET_FENCE=str(self.root/'control/reset-pending.json'),BASE_URL=self.origin,

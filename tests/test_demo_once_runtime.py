@@ -396,6 +396,22 @@ class OnceRuntimeStateTests(unittest.TestCase):
         self.assertTrue(value.status()['ready'])
         self.assertEqual(sum(event == ('purge',) for event in backend.events), 1)
 
+    def test_midnight_removes_orphaned_child_snapshot_files(self):
+        value, backend = self.populated()
+        contacts = backend.contents()['contacts']
+        shipped = self.module.Backend(self.root, 'https://synthetic.invalid')
+        shipped.configure(fixture_bindings())
+        temporary = Path(shipped.app_env(self.day[0])['TMPDIR'])
+        self.assertEqual(temporary, self.root/'runtime/run')
+        temporary.mkdir(mode=0o700, parents=True, exist_ok=True)
+        orphan = temporary/'pocketcontext-snapshot-orphan.db'
+        orphan.write_bytes(b'Synthetic private snapshot left by a killed child')
+        self.day[0] = '2026-10-10'
+        value.tick()
+        self.assertFalse(orphan.exists())
+        self.assertEqual(backend.contents()['contacts'], contacts)
+        self.assertTrue(value.ready)
+
     def test_internal_probe_token_matches_child_environment_and_rotates(self):
         import io
         from unittest.mock import Mock, patch

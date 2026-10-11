@@ -11,7 +11,9 @@ visitor can evict a cached snapshot, and a write by any visitor invalidates all
 retained snapshots. Cold reads still copy requester-visible history. Keep limits
 unchanged until measured concurrency justifies tuning; production latency results
 are not a demo performance guarantee. Reset stops the server, discarding its
-process-owned caches before the next generation starts.
+process-owned caches before the next generation starts. Child temporary files are
+placed under disposable `runtime/run`, so daily deletion also removes orphaned
+snapshot files left by an abruptly killed process.
 
 The pin changes the supervisor fingerprint even though application migrations and
 contact schema are unchanged. The compatibility declaration explicitly accepts
