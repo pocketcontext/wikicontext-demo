@@ -21,8 +21,10 @@ The pinned build includes `sqlite_math_functions,sqlite_percentile,sqlite_fts5`.
 Authenticated SQL supports `json_each`/`json_tree` and median/percentile aggregates.
 The shared FTS5 index is removed: it spanned every space. Published-page search
 uses private per-requester indexes configured in `pocketcontext.json`. The server
-pin includes private-search support. See
-[private search](docs/fts-adoption.md).
+pin includes private-search support. Filtered SQL transparently reuses bounded
+per-requester snapshots until any committed database change; authentication and
+demo admission are checked on every request. See [cache adoption](docs/snapshot-cache.md)
+and [private search](docs/fts-adoption.md).
 
 Keep data outside Git. Provision users through operator maintenance, or configure a separate Google Web client with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and `WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN`. Register `http://127.0.0.1:8765/callback` and the approved origin's `/api/oauth2-redirect`. Use ordinary user credentials for knowledge operations. The public demo is deployed at https://wiki-demo.pocketcontext.com; see the deployment record for verified behavior and remaining operational checks. Public demo mode requires the separate admission, contact and generation configuration in [demo operations](docs/demo-operations.md). See [release verification](DEPLOYMENT.md) and [deployment procedures](docs/deployment.md).
 
@@ -224,6 +226,7 @@ python3 tests/skill.py --binary /absolute/path/to/pinned/pocketcontext --trace
 python3 tests/knowledge_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/search_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/ingest_integration.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/ingest_concurrency.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/export_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/deploy.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/maintenance.py --binary /absolute/path/to/pinned/pocketcontext
@@ -270,7 +273,7 @@ records; this disposable demo starts empty and does not import a production wiki
 
 ## Infrastructure provenance
 
-Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. The compatible server revision is `dc1dc6b0e88bbc46f36fa8441c8f6959bada4732`, recorded in `POCKETCONTEXT_VERSION`.
+Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. The compatible server revision is `4b03d2905a34d9a606cb313e118d6874e74f0548`, recorded in `POCKETCONTEXT_VERSION`.
 
 ## Request observability
 

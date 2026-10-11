@@ -73,15 +73,21 @@ def stop(name):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
+    parser.add_argument('--previous-image', help='Accepted predecessor image for an actual server upgrade')
     parser.add_argument('--minio-image', default=s.MINIO_IMAGE)
     args=parser.parse_args()
     prefix='wikicontext-standard-'+secrets.token_hex(5)
     network=prefix+'-network';volume=prefix+'-storage';minio=prefix+'-minio'
-    candidate_image=prefix+':candidate'
+    candidate_image=args.image if args.previous_image else prefix+':candidate'
+    old_image=args.previous_image or args.image
     containers=[]
-    revision=docker('run','--rm','--entrypoint','cat',args.image,'/usr/local/share/wikicontext-revision').stdout.decode().strip()
+    revision=docker('run','--rm','--entrypoint','cat',old_image,'/usr/local/share/wikicontext-revision').stdout.decode().strip()
     if not re.fullmatch('[a-f0-9]{40}',revision):raise Failure('image lacks immutable revision')
     next_revision='a'*40 if revision!='a'*40 else 'b'*40
+    if args.previous_image:
+        next_revision=docker('run','--rm','--entrypoint','cat',args.image,'/usr/local/share/wikicontext-revision').stdout.decode().strip()
+        if not re.fullmatch('[a-f0-9]{40}',next_revision) or next_revision==revision:
+            raise Failure('upgrade requires different immutable revisions')
     try:
         if not os.environ.get('WIKICONTEXT_TEST_MINIO_IMAGE'):
             docker('build','--file',str(ROOT/'docker/minio.Dockerfile'),'--tag',args.minio_image,str(ROOT/'docker'),timeout=1200)
@@ -89,9 +95,10 @@ def main():
         with tempfile.TemporaryDirectory(prefix=prefix) as directory:
             tmp=Path(directory)
             # Same tested runtime and schema; only the immutable build identity changes.
-            dockerfile=tmp/'Dockerfile'
-            dockerfile.write_text('ARG BASE\nFROM ${BASE}\nRUN printf "%s\\n" "'+next_revision+'" > /usr/local/share/wikicontext-revision\nLABEL org.opencontainers.image.revision="'+next_revision+'"\n')
-            docker('build','--build-arg','BASE='+args.image,'--tag',candidate_image,str(tmp),timeout=180)
+            if not args.previous_image:
+                dockerfile=tmp/'Dockerfile'
+                dockerfile.write_text('ARG BASE\nFROM ${BASE}\nRUN printf "%s\\n" "'+next_revision+'" > /usr/local/share/wikicontext-revision\nLABEL org.opencontainers.image.revision="'+next_revision+'"\n')
+                docker('build','--build-arg','BASE='+args.image,'--tag',candidate_image,str(tmp),timeout=180)
             certs=tmp/'certs';certs.mkdir()
             generated=subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','2',
                 '-keyout',str(certs/'private.key'),'-out',str(certs/'public.crt'),'-subj','/CN='+minio,
@@ -153,7 +160,7 @@ def main():
                 for key in env:command.extend(['-e',key])
                 docker(*command,image,env=env)
             print('Storage configured; starting fresh demo control',flush=True)
-            old=prefix+'-old';launch(old,args.image)
+            old=prefix+'-old';launch(old,old_image)
             for _ in range(120):
                 try:control(old,'status');break
                 except (RuntimeError,ValueError):time.sleep(.25)
@@ -205,7 +212,7 @@ def main():
     finally:
         for name in reversed(containers):docker('rm','--force',name,required=False)
         docker('volume','rm',volume,required=False);docker('network','rm',network,required=False)
-        docker('image','rm',candidate_image,required=False)
+        if not args.previous_image:docker('image','rm',candidate_image,required=False)
 
 
 if __name__=='__main__':

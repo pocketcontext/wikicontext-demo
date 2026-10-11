@@ -75,3 +75,17 @@ three-database lifecycle and original-file checks. Browser popup cancellation,
 timeout and late-session handling affect shared authentication and should be
 reviewed independently for core WikiContext adoption; demo enrollment and reset
 behavior remain fork-only. Passing demo validation does not validate core.
+
+## Cache adoption review — 11 October 2026
+
+Reviewed core WikiContext through `be8e301` and adopted the applicable server-pin,
+schema-reference and ingestion-concurrency changes from `c923e21`. The demo adds
+personal-space cache isolation coverage and an explicit predecessor compatibility
+declaration. PocketContext is pinned to `4b03d2905a34d9a606cb313e118d6874e74f0548`
+(the exact authoritative value is in `POCKETCONTEXT_VERSION`).
+
+Production Company-space policy, populated production migrations, ONCE checkpoint
+tools, production workflows and retention rules are excluded. Demo enrollment,
+personal-space defaults, quotas, audio restrictions, UTC reset and separately
+retained contacts remain unchanged. No portable-client behavior changed, so its
+existing published launcher pin remains; both copied-launcher modes are validated.

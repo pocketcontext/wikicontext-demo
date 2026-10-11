@@ -174,6 +174,42 @@ class StandardRuntimeTests(unittest.TestCase):
 
 class StandardProcessTests(unittest.TestCase):
     @unittest.skipUnless(fixture.os.environ.get('WIKICONTEXT_TEST_BINARY') and fixture.os.environ.get('WIKICONTEXT_TEST_LITESTREAM'), 'requires pinned server and Litestream')
+    def test_packaged_policy_preserves_populated_predecessor(self):
+        """Exercise the real accepted fingerprint, three DBs and committed state."""
+        import json
+        policy = json.loads((fixture.Path(__file__).resolve().parents[1]/'deploy/demo/compatibility.json').read_text())
+        predecessor = '79ef7c911759b3f0e3a9fb17d54a4be83afef8a427994e9f6a9b7680ac88f4f0'
+        self.assertIn(predecessor, policy['acceptSchemas'])
+        self.assertNotEqual(predecessor, policy['schema'])
+        day = fixture.datetime.now(fixture.timezone.utc).date().isoformat()
+        with fixture.tempfile.TemporaryDirectory(prefix='standard-compatible-process-') as directory:
+            root = fixture.Path(directory)/'storage'
+            module = fixture.runtime_module()
+            def create(revision, contract, binary):
+                backend = fixture.ProcessBackend(root, binary, fixture.os.environ['WIKICONTEXT_TEST_LITESTREAM'])
+                return module.Runtime(root, revision, backend, clock=lambda:day, compatibility=contract), backend
+            binary = fixture.os.environ['WIKICONTEXT_TEST_BINARY']
+            old_policy = dict(policy, schema=predecessor, acceptSchemas=[predecessor])
+            old, backend = create(fixture.REVISION, old_policy, fixture.os.environ.get('WIKICONTEXT_TEST_PREDECESSOR_BINARY', binary))
+            instances = [old]
+            try:
+                old.start();old.configure(fixture.fixture_bindings());old.initialize()
+                document, slug = backend.populate_real();old.close()
+                before = old.baseline()
+                candidate, processes = create(fixture.NEXT_REVISION, policy, binary)
+                instances.append(candidate);candidate.start()
+                self.assertTrue(candidate.ready)
+                candidate.verify_baseline(before)
+                self.assertEqual(processes.read_document(document)['slug'], slug)
+                consent = processes.contact_request('/preferences?subject=synthetic-once-account')
+                self.assertFalse(consent['salesContact'] or consent['newsletter'])
+                state = module.private_json(root/'control/state.json')
+                self.assertEqual(state['schema'], policy['schema'])
+                self.assertFalse((root/'control/upgrade-pending.json').exists())
+            finally:
+                for instance in reversed(instances): instance.close()
+
+    @unittest.skipUnless(fixture.os.environ.get('WIKICONTEXT_TEST_BINARY') and fixture.os.environ.get('WIKICONTEXT_TEST_LITESTREAM'), 'requires pinned server and Litestream')
     def test_populated_standard_replacement_and_noop_restart(self):
         day = fixture.datetime.now(fixture.timezone.utc).date().isoformat()
         with fixture.tempfile.TemporaryDirectory(prefix='standard-process-') as directory:
