@@ -8,14 +8,80 @@ async function signIn(page: Page, request: APIRequestContext, name: string) {
   // only the external popup is excluded from this local browser test.
   await page.evaluate(value => localStorage.setItem("wikicontext.reader.auth", JSON.stringify(value)), session);
   await page.reload();
-  await expect(page.getByRole("checkbox", { name: /I accept the demo terms/ })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /I accept the demo terms/ })).toBeEnabled();
 }
+
+async function expectConsentGate(page: Page) {
+  await expect(page.getByRole("checkbox", { name: /I accept the demo terms/ })).not.toBeChecked();
+  await expect(page.getByRole("link", { name: "Connect your coding agent", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open your wiki", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Coding-agent setup instructions")).toHaveCount(0);
+  await expect(page.locator(".sidebar")).toHaveCount(0);
+}
+
+async function expectInstructions(page: Page) {
+  await expect(page.getByLabel("Coding-agent setup instructions")).toBeVisible();
+  await expect(page.locator(".sidebar")).toHaveCount(0);
+}
+
+async function expectSignedOutChoices(page: Page) {
+  for (const name of [/I accept the demo terms/, /commercial offers/, /newsletter/]) {
+    const checkbox = page.getByRole("checkbox", { name });
+    await expect(checkbox).toBeVisible();
+    await expect(checkbox).not.toBeChecked();
+    await expect(checkbox).toBeDisabled();
+  }
+  await expect(page.getByRole("button", { name: "Accept terms & show instructions", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Accept terms & open wiki", exact: true })).toBeDisabled();
+}
+
+test("landing matches the light public-demo shell despite saved and system dark preferences", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.addInitScript(() => localStorage.setItem("wiki-theme", "dark"));
+  await page.goto("/");
+  await expect(page).toHaveTitle("Try WikiContext · Public demo");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+  await expect(page.getByRole("button", { name: /Switch to .* theme/ })).toHaveCount(0);
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  for (const name of ["How it works", "Your data", "Explore the demo"]) {
+    await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
+  }
+  const footer = page.locator("footer");
+  await expect(footer.getByRole("link", { name: "WikiContext home" })).toBeVisible();
+  await expect(footer.getByRole("link", { name: "Terms", exact: true })).toHaveAttribute("href", "/terms/");
+  await expect(footer.getByRole("link", { name: "Privacy", exact: true })).toHaveAttribute("href", "/privacy/");
+  await footer.getByRole("link", { name: "Back to the start ↑", exact: true }).click();
+  await expect(page.locator("#start")).toBeInViewport();
+  await page.reload();
+  await expect(page).toHaveTitle("Try WikiContext · Public demo");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+});
+
+test("legal pages retain the light palette under a dark system preference", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  for (const route of ["/terms/", "/privacy/"]) {
+    await page.goto(route);
+    await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(247, 247, 240)");
+    await expect(page.locator("body")).toHaveCSS("color", "rgb(38, 55, 45)");
+  }
+});
+
+test("anonymous setup permalink focuses the sign-in and consent section", async ({ page }) => {
+  await page.goto("/#/setup");
+  await expectSignedOutChoices(page);
+  await expect(page.locator("#start")).toBeFocused();
+  await expect(page.locator("#start")).toBeInViewport();
+  await expect(page.getByLabel("Coding-agent setup instructions")).toHaveCount(0);
+});
 
 test("daily consent, conflicts, agent setup and private live reader", async ({ page, request, context }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/#/page/private-observatory");
   await expect(page.getByRole("button", { name: "Continue with Google", exact: true })).toBeEnabled();
+  await expectSignedOutChoices(page);
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to content", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -23,6 +89,7 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.screenshot({ path: "/tmp/wikicontext-demo-desktop.png", fullPage: true });
   await signIn(page, request, "reader");
+  await expectConsentGate(page);
   await expect(page.getByRole("heading", { name: "Review your choices.", exact: true })).toBeVisible();
   await expect(page.getByText("Daily reset", { exact: true })).toBeVisible();
   await expect(page.locator(".enrollment-card legend")).toBeVisible();
@@ -31,7 +98,7 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   await expect(page.locator(".enrollment-card")).not.toContainText("Sign in with Google, then");
   await page.locator(".enrollment-card").screenshot({ path: "/tmp/wikicontext-demo-consent-card.png" });
   const terms = page.getByRole("checkbox", { name: /I accept the demo terms/ });
-  const submit = page.getByRole("button", { name: /Accept terms/ });
+  const submit = page.getByRole("button", { name: "Accept terms & show instructions", exact: true });
   await expect(submit).toBeEnabled();
   await expect(page.getByRole("checkbox", { name: /commercial offers/ })).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: /newsletter/ })).not.toBeChecked();
@@ -57,17 +124,15 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   await expect(page.getByRole("checkbox", { name: /commercial offers/ })).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: /newsletter/ })).not.toBeChecked();
   await terms.check(); await submit.click();
+  await expectInstructions(page);
   await expect(page.getByRole("heading", { name: "Connect your coding agent.", exact: true })).toBeVisible();
   await expect(page.locator("#setup")).toBeFocused();
   await page.locator("#setup").screenshot({ path: "/tmp/wikicontext-demo-agent-guide.png" });
-  await expect(page.getByRole("heading", { name: "Your wiki is ready.", exact: true })).toBeVisible();
-  const setupLink = page.getByRole("link", { name: "Connect your coding agent", exact: true });
-  await setupLink.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#setup")).toBeFocused();
+  await expectInstructions(page);
   await expect(page.getByLabel("Coding-agent setup instructions")).toContainText("reader@example.test");
   await expect(page.getByLabel("Coding-agent setup instructions")).toContainText("wikicontext-demo");
   await expect(page.getByRole("table", { name: "Today’s usage and daily limits" })).toBeVisible();
+  await page.locator("summary").filter({ hasText: "Manage contact permissions" }).click();
   const withdrawalHref = await page.getByRole("link", { name: "Private withdrawal link", exact: true }).getAttribute("href");
   expect(withdrawalHref).toContain("/#/withdraw/");
   const privateContext = await context.browser()!.newContext({ viewport: { width: 375, height: 812 } });
@@ -93,7 +158,8 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   await expect(withdrawalPage.getByRole("status")).toContainText("This withdrawal link is incomplete");
   await expect(withdrawalPage.getByRole("button")).toBeDisabled();
   await privateContext.close();
-  await page.getByRole("link", { name: "Open your wiki", exact: true }).first().click();
+  await page.locator("#setup summary").filter({ hasText: "Read your cited wiki" }).click();
+  await page.getByRole("link", { name: "Open your wiki", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Space", exact: true })).toHaveCount(0);
   const response = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/publish");
@@ -106,17 +172,164 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   await expect(page.getByRole("link", { name: /Private observatory/ }).first()).toBeVisible();
   const peer = await context.newPage();
   await peer.goto("/#/page/private-observatory");
+  await expectConsentGate(peer);
+  await expect(peer.getByRole("heading", { name: "Private observatory", exact: true })).toHaveCount(0);
+  await peer.getByRole("checkbox", { name: /I accept the demo terms/ }).check();
+  await peer.getByRole("button", { name: "Accept terms & open wiki", exact: true }).click();
   await expect(peer.getByRole("heading", { name: "Private observatory", exact: true })).toBeVisible();
   await peer.evaluate(() => localStorage.removeItem("wikicontext.reader.auth"));
   await expect(page.getByRole("button", { name: "Continue with Google", exact: true })).toBeVisible();
   await expect(page.getByText("Private starlight observation.", { exact: false })).toHaveCount(0);
   await signIn(page, request, "other");
-  await terms.check(); await submit.click();
-  await page.getByRole("link", { name: "Open your wiki", exact: true }).first().click();
+  await terms.check();
+  await page.getByRole("button", { name: "Accept terms & open wiki", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Private observatory", exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test("enrolled visitors can review, save and withdraw their retained choices", async ({ page, request }) => {
+  await page.goto("/");
+  await signIn(page, request, "persistent-choices");
+  const terms = page.getByRole("checkbox", { name: /I accept the demo terms/ });
+  const sales = page.getByRole("checkbox", { name: /commercial offers/ });
+  const newsletter = page.getByRole("checkbox", { name: /newsletter/ });
+  const submit = page.getByRole("button", { name: "Accept terms & show instructions", exact: true });
+  const submissions: { expectedRevision: number }[] = [];
+  page.on("request", request => {
+    if (request.url().endsWith("/api/demo/enroll")) submissions.push(request.postDataJSON());
+  });
+  const saved = () => page.evaluate(async () => {
+    const { token } = JSON.parse(localStorage.getItem("wikicontext.reader.auth")!);
+    const response = await fetch("/api/demo/preferences", { headers: { Authorization: token } });
+    return response.json();
+  });
+  await terms.check(); await sales.check(); await submit.click();
+  await expectInstructions(page);
+  await expect(sales).toBeChecked(); await expect(newsletter).not.toBeChecked();
+  const first = await saved();
+  expect(first).toMatchObject({ salesContact: true, newsletter: false });
+  await page.reload();
+  await expect(sales).toBeChecked(); await expect(newsletter).not.toBeChecked();
+  await expect(terms).not.toBeChecked();
+  await expectConsentGate(page);
+  await submit.click(); await expect(terms).toBeFocused();
+  expect(submissions).toHaveLength(1);
+  await terms.check(); await sales.uncheck(); await newsletter.check(); await submit.click();
+  await expect.poll(async () => (await saved()).newsletter).toBe(true);
+  const second = await saved();
+  expect(second).toMatchObject({ salesContact: false, newsletter: true });
+  expect(second.revision).toBeGreaterThan(first.revision);
+  expect(submissions[1].expectedRevision).toBe(first.revision);
+  await sales.check(); await newsletter.uncheck(); await submit.click();
+  await expect.poll(async () => (await saved()).salesContact).toBe(true);
+  const third = await saved();
+  expect(third).toMatchObject({ salesContact: true, newsletter: false });
+  expect(submissions[2].expectedRevision).toBe(second.revision);
+  await page.locator(".enrollment-card").screenshot({ path: "/tmp/wikicontext-demo-enrolled-consent-card.png" });
+  await page.route("**/api/demo/enroll", route => route.fulfill({ status: 409, json: { message: "Synthetic conflict" } }));
+  await newsletter.check(); await submit.click();
+  await expect(page.getByRole("status").filter({ hasText: "preferences changed elsewhere" })).toBeVisible();
+  await expect(terms).not.toBeChecked(); await expect(newsletter).not.toBeChecked();
+  await expect(submit).toBeEnabled(); expect(submissions).toHaveLength(4);
+  await expectConsentGate(page);
+  await page.unroute("**/api/demo/enroll");
+  await page.locator("summary").filter({ hasText: "Manage contact permissions" }).click();
+  await page.getByRole("button", { name: "Withdraw both marketing permissions", exact: true }).click();
+  await expect(sales).not.toBeChecked(); await expect(newsletter).not.toBeChecked();
+  await expect(terms).not.toBeChecked(); await expect(submit).toBeEnabled();
+  const withdrawn = await saved();
+  expect(withdrawn).toMatchObject({ salesContact: false, newsletter: false });
+  expect(withdrawn.revision).toBeGreaterThan(third.revision);
+  await terms.check(); await submit.click();
+  await expect.poll(() => submissions.length).toBe(5);
+  expect(submissions[4].expectedRevision).toBe(withdrawn.revision);
+  await expect.poll(async () => (await saved()).revision).toBeGreaterThan(withdrawn.revision);
+});
+
+test("restored enrollment and direct destinations require fresh consent and an explicit destination", async ({ page, request }) => {
+  await page.goto("/");
+  await signIn(page, request, "returning-enrolled");
+  const terms = page.getByRole("checkbox", { name: /I accept the demo terms/ });
+  const sales = page.getByRole("checkbox", { name: /commercial offers/ });
+  const newsletter = page.getByRole("checkbox", { name: /newsletter/ });
+  const submit = page.getByRole("button", { name: "Accept terms & show instructions", exact: true });
+  await terms.check(); await sales.check(); await submit.click();
+  await expectInstructions(page);
+  for (const destination of ["/", "/#/", "/#/page/private-observatory", "/#/setup"]) {
+    await page.goto(destination);
+    await page.reload();
+    await expect(sales).toBeChecked();
+    await expect(newsletter).not.toBeChecked();
+    await expectConsentGate(page);
+    if (destination === "/#/setup") {
+      await expect(page.locator("#start")).toBeFocused();
+      await expect(page.locator("#start")).toBeInViewport();
+    }
+    await submit.click();
+    await expect(terms).toBeFocused();
+    await expectConsentGate(page);
+    await terms.check(); await submit.click();
+    await expectInstructions(page);
+    await expect(page.locator("#setup")).toBeFocused();
+    await expect(page.locator("#setup")).toBeInViewport();
+  }
+  await expect(page.getByLabel("Coding-agent setup instructions")).toBeVisible();
+  await expect(page.locator(".sidebar")).toHaveCount(0);
+  await page.locator("#setup summary").filter({ hasText: "Read your cited wiki" }).click();
+  await page.getByRole("link", { name: "Open your wiki", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
+  await page.getByRole("link", { name: "Demo setup", exact: true }).click();
+  await expectConsentGate(page);
+  await expect(page.locator("#start")).toBeFocused();
+  await expect(page.locator("#start")).toBeInViewport();
+  await expect(sales).toBeChecked();
+  await terms.check();
+  await page.getByRole("button", { name: "Accept terms & open wiki", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
+  await page.reload();
+  await expect(sales).toBeChecked();
+  await expectConsentGate(page);
+});
+
+for (const destination of ["show instructions", "open wiki"] as const) {
+  test(`accept terms and ${destination} navigates only after enrollment succeeds`, async ({ page, request }) => {
+    await page.goto("/");
+    await expectSignedOutChoices(page);
+    await signIn(page, request, destination === "show instructions" ? "pending-instructions" : "pending-wiki");
+    const terms = page.getByRole("checkbox", { name: /I accept the demo terms/ });
+    const submit = page.getByRole("button", { name: `Accept terms & ${destination}`, exact: true });
+    let submissions = 0;
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await page.route("**/api/demo/enroll", async route => {
+      submissions++;
+      await held;
+      await route.continue();
+    });
+    try {
+      await submit.click();
+      await expect(terms).toBeFocused();
+      expect(submissions).toBe(0);
+      await terms.check();
+      await submit.click();
+      await expect.poll(() => submissions).toBe(1);
+      await expect(page.getByLabel("Coding-agent setup instructions")).toHaveCount(0);
+      await expect(page.locator(".sidebar")).toHaveCount(0);
+      await expect(submit).toBeDisabled();
+      release();
+      if (destination === "show instructions") {
+        await expectInstructions(page);
+        await expect(page.locator("#setup")).toBeFocused();
+      } else {
+        await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
+        await expect(page.getByLabel("Coding-agent setup instructions")).toHaveCount(0);
+      }
+    } finally {
+      release();
+    }
+  });
+}
 
 test("saved optional choices are visible before daily terms acceptance", async ({ page, request }) => {
   await page.route("**/api/demo/preferences", route => route.fulfill({
@@ -124,7 +337,7 @@ test("saved optional choices are visible before daily terms acceptance", async (
   }));
   await page.goto("/");
   await signIn(page, request, "saved-preferences");
-  const notice = page.getByText("Your saved preferences are shown. Review them before continuing.", { exact: true });
+  const notice = page.getByText("Your saved preferences are shown. Review them before submitting changes.", { exact: true });
   await expect(notice).toBeVisible();
   const choices = page.locator(".enrollment-card legend");
   await expect(choices).toBeVisible();
@@ -132,7 +345,7 @@ test("saved optional choices are visible before daily terms acceptance", async (
   await expect(page.getByRole("checkbox", { name: /commercial offers/ })).toBeChecked();
   await expect(page.getByRole("checkbox", { name: /newsletter/ })).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: /I accept the demo terms/ })).not.toBeChecked();
-  await expect(page.getByRole("button", { name: /Accept terms/ })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Accept terms & show instructions", exact: true })).toBeEnabled();
 });
 
 test("mobile layout, legal pages, unavailable and reset states", async ({ page, request }) => {
@@ -140,7 +353,8 @@ test("mobile layout, legal pages, unavailable and reset states", async ({ page, 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Your sources/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
-  await page.getByRole("button", { name: /Switch to light theme/ }).click();
+  await expect(page.getByRole("button", { name: /Switch to .* theme/ })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Explore the demo" })).toBeInViewport();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   const legal = await request.get("/terms/"); expect(legal.ok()).toBeTruthy();
   expect(await legal.text()).toContain("00:00 UTC");
@@ -149,7 +363,8 @@ test("mobile layout, legal pages, unavailable and reset states", async ({ page, 
   await expect(page.locator(".enrollment-card legend")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.getByRole("checkbox", { name: /I accept the demo terms/ }).check();
-  await page.getByRole("button", { name: /Accept terms/ }).click();
+  await page.getByRole("button", { name: "Accept terms & show instructions", exact: true }).click();
+  await expectInstructions(page);
   await expect(page.getByLabel("Coding-agent setup instructions")).toBeVisible();
   const publishStep = page.locator("#setup summary").filter({ hasText: "Publish a sample document" });
   await publishStep.focus();
@@ -170,10 +385,13 @@ test("mobile layout, legal pages, unavailable and reset states", async ({ page, 
   });
   await page.goto("/#/setup");
   await page.reload();
+  await expectConsentGate(page);
+  await page.getByRole("checkbox", { name: /I accept the demo terms/ }).check();
+  await page.getByRole("button", { name: "Accept terms & show instructions", exact: true }).click();
   await expect(page.getByText("Coding-agent setup is temporarily unavailable.", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Coding-agent setup instructions")).toHaveCount(0);
   await page.unroute("**/api/demo/status");
-  await page.getByRole("link", { name: "Open your wiki", exact: true }).first().click();
+  await page.getByRole("button", { name: "Accept terms & open wiki", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
   // A live service fence immediately removes private reader state.
   await page.route("**/api/context/query", route => route.fulfill({ status: 503, json: { message: "Resetting" } }));
@@ -212,18 +430,38 @@ test('Google popup callback persists login and localStorage.clear signs out othe
   const popupPromise = page.waitForEvent('popup');
   await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
   const popup = await popupPromise;
-  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeEnabled();
   await expect.poll(() => popup.isClosed()).toBeTruthy();
   expect(await page.evaluate(() => !!JSON.parse(localStorage.getItem('wikicontext.reader.auth')!).token)).toBeTruthy();
   await page.reload();
-  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeEnabled();
   await expect(page).toHaveURL(/#\/page\/preserved-destination$/);
   const peer = await context.newPage();
   await peer.goto('/');
-  await expect(peer.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeVisible();
+  await expect(peer.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeEnabled();
   await peer.evaluate(() => localStorage.clear());
   await expect(page.getByRole('button', { name: 'Continue with Google', exact: true })).toBeVisible();
-  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toHaveCount(0);
+  await expectSignedOutChoices(page);
+});
+
+test('Google login for an already enrolled visitor still requires consent and destination selection', async ({ page, context, request }) => {
+  await page.goto('/');
+  await signIn(page, request, 'returning-popup');
+  await page.getByRole('checkbox', { name: /I accept the demo terms/ }).check();
+  await page.getByRole('checkbox', { name: /newsletter/ }).check();
+  await page.getByRole('button', { name: "Accept terms & show instructions", exact: true }).click();
+  await expectInstructions(page);
+  await page.getByRole('button', { name: 'Sign out of this browser', exact: true }).click();
+  await mockGoogle(context, request, 'returning-popup');
+  await page.goto('/#/page/preserved-destination');
+  await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: /newsletter/ })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /commercial offers/ })).not.toBeChecked();
+  await expectConsentGate(page);
+  await page.getByRole('checkbox', { name: /I accept the demo terms/ }).check();
+  await page.getByRole('button', { name: "Accept terms & open wiki", exact: true }).click();
+  await expect(page).toHaveURL(/#\/page\/preserved-destination$/);
+  await expect(page.getByRole('heading', { name: 'Your wiki is empty — for now' })).toBeVisible();
 });
 
 test('OAuth completion survives nginx while exchange is pending and administration stays blocked', async ({ page, context, request }) => {
@@ -257,7 +495,7 @@ test('OAuth completion survives nginx while exchange is pending and administrati
       expect((await request.get(path)).status()).toBe(404);
     }
     release();
-    await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeEnabled();
     expect(await popup.evaluate(() => (window as Window & { completionCloseAttempts: number }).completionCloseAttempts)).toBeGreaterThan(0);
     await popup.close();
   } finally {
@@ -287,7 +525,7 @@ test('Google login works in memory when browser storage is blocked', async ({ pa
   await mockGoogle(context, request, 'blocked-storage');
   await page.goto('/');
   await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
-  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeEnabled();
   await page.reload();
   await expect(page.getByRole('button', { name: 'Continue with Google', exact: true })).toBeVisible();
 });

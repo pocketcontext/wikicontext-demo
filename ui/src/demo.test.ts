@@ -46,3 +46,23 @@ it("chooses only memberships and defaults to the personal space", () => {
   expect(selectSpace([group, personal], "foreign00000001")).toBe(personal);
   expect(selectSpace([])).toBeNull();
 });
+it("loads enrolled preferences and preserves access while refreshing conflicting or withdrawn choices", () => {
+  const enrollment = { enrolled: true, generation: status.generation, termsVersion: status.termsVersion, space: "personal", usage: {} };
+  let state = onboardingReducer(initialOnboarding, { type: "check" });
+  state = onboardingReducer(state, { type: "enrollment", enrollment });
+  expect(state).toMatchObject({ phase: "checking", preferences: null, enrollment });
+  state = onboardingReducer(state, { type: "preferences", preferences: { revision: 2, salesContact: true, newsletter: false } });
+  expect(state.phase).toBe("enrolled");
+  state = onboardingReducer(state, { type: "submit" });
+  state = onboardingReducer(state, { type: "enrolled", enrollment, unsubscribeToken: "synthetic", preferences: { revision: 3, salesContact: false, newsletter: true } });
+  expect(state.preferences).toEqual({ revision: 3, salesContact: false, newsletter: true });
+  state = onboardingReducer(state, { type: "conflict" });
+  expect(state).toMatchObject({ phase: "checking", preferences: null, enrollment });
+  state = onboardingReducer(state, { type: "preferences", preferences: { revision: 4, salesContact: false, newsletter: false } });
+  expect(state).toMatchObject({ phase: "enrolled", conflict: true, enrollment });
+  state = onboardingReducer(state, { type: "withdrawn", message: "Withdrawn" });
+  expect(state).toMatchObject({ phase: "checking", preferences: null, unsubscribeToken: "", enrollment });
+  state = onboardingReducer(state, { type: "failed", message: "Unavailable" });
+  expect(state).toMatchObject({ phase: "enrolled", preferences: null, enrollment });
+  expect(onboardingReducer(state, { type: "submit" })).toEqual(state);
+});

@@ -13,6 +13,7 @@ import {
   type OnboardingState,
 } from "./demo";
 import "./landing.css";
+import WikiHero from "./WikiHero";
 
 export interface LandingProps {
   mode: "live" | "preview";
@@ -21,16 +22,17 @@ export interface LandingProps {
   state: OnboardingState;
   identity: { email: string; name: string } | null;
   now: number;
-  theme: string;
-  setTheme: (value: string) => void;
   onSignIn: () => void;
   onCancelSignIn: () => void;
   onSignOut: () => void;
-  onSubmit: (choices: { salesConsent: boolean; newsletterConsent: boolean }) => void;
+  onSubmit: (choices: { salesConsent: boolean; newsletterConsent: boolean }, destination: "instructions" | "wiki") => void;
   onWithdraw: () => void;
   onRetryStatus: () => void;
   wikiHref: string;
   onOpenWiki: () => void;
+  showInstructions: boolean;
+  setupRequested: boolean;
+  onChoicesChanged: () => void;
 }
 
 function Arrow() {
@@ -46,19 +48,19 @@ export default function Landing(props: LandingProps) {
   const live = mode === "live" && !!status;
   const resetAt = live ? status.resetAt : nextUtcMidnight(now);
   const seconds = secondsUntil(resetAt, now);
-  const enrolled = live && state.phase === "enrolled";
+  const enrolled = live && !!state.enrollment?.enrolled;
   const setupRef = useRef<HTMLElement>(null);
-  const wasEnrolled = useRef(enrolled);
+  const startRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    // Move focus to the next step once enrollment completes on this page.
-    if (enrolled && !wasEnrolled.current) {
-      setupRef.current?.focus({ preventScroll: true });
-      setupRef.current?.scrollIntoView?.({
-        behavior: matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-      });
-    }
-    wasEnrolled.current = enrolled;
-  }, [enrolled]);
+    // #/setup is an application route, not a native #setup document anchor.
+    // Before consent, take visitors to the form rather than hidden instructions.
+    const target = props.showInstructions ? setupRef.current
+      : props.setupRequested ? startRef.current : null;
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView?.({
+      behavior: matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  }, [props.showInstructions, props.setupRequested]);
   return (
     <div className="landing">
       <a className="skip-link landing-skip" href="#main" onClick={(event) => { event.preventDefault(); document.getElementById("main")?.focus(); }}>
@@ -81,18 +83,12 @@ export default function Landing(props: LandingProps) {
         <nav aria-label="Main navigation">
           <a href="#how" onClick={jump("how")}>How it works</a>
           <a href="#data" onClick={jump("data")}>Your data</a>
-          <a className="nav-cta" href="#start" onClick={jump("start")}>Get started <Arrow /></a>
+          <a className="nav-cta" href="#start" onClick={jump("start")}>Explore the demo <Arrow /></a>
         </nav>
-        <button
-          className="icon-button"
-          aria-label={`Switch to ${props.theme === "dark" ? "light" : "dark"} theme`}
-          onClick={() => props.setTheme(props.theme === "dark" ? "light" : "dark")}
-        >
-          {props.theme === "dark" ? "☼" : "☾"}
-        </button>
       </header>
       <main id="main" tabIndex={-1}>
         <section className="hero wrap" aria-labelledby="hero-title">
+          <div className="hero-copy">
           <p className="eyebrow">A WIKI YOUR CODING AGENT WRITES</p>
           <h1 id="hero-title">Your sources.<br />Your agent.<br /><em>A cited wiki.</em></h1>
           <p className="intro">
@@ -103,6 +99,8 @@ export default function Landing(props: LandingProps) {
             <a className="primary-button" href="#start" onClick={jump("start")}>Try it with Google <Arrow /></a>
             <a className="text-link" href="#how" onClick={jump("how")}>See how it works</a>
           </div>
+          </div>
+          <WikiHero />
         </section>
         <section className="reset-strip wrap" aria-labelledby="reset-title">
           <div>
@@ -143,7 +141,7 @@ export default function Landing(props: LandingProps) {
             </li>
           </ol>
         </section>
-        <section id="start" className="start wrap" aria-labelledby="start-title" tabIndex={-1}>
+        <section ref={startRef} id="start" className="start wrap" aria-labelledby="start-title" tabIndex={-1}>
           <div className="start-copy">
             <p className="eyebrow">MAKE YOURSELF AT HOME</p>
             <h2 id="start-title">Sign in, accept the terms,<br /><em>connect your agent.</em></h2>
@@ -156,7 +154,7 @@ export default function Landing(props: LandingProps) {
           </div>
           <EnrollmentCard {...props} />
         </section>
-        {enrolled && (
+        {enrolled && props.showInstructions && (
           <section ref={setupRef} id="setup" className="setup wrap" aria-labelledby="setup-title" tabIndex={-1}>
             <p className="eyebrow">NEXT STEP</p>
             <h2 id="setup-title">Connect your coding agent.</h2>
@@ -211,10 +209,14 @@ export default function Landing(props: LandingProps) {
         </section>
       </main>
       <footer className="landing-footer wrap">
-        <span>WikiContext · knowledge connected to its evidence.</span>
+        <a className="landing-brand" href="#main" onClick={jump("main")} aria-label="WikiContext home">
+          <span className="brand-mark" aria-hidden="true">W</span>WikiContext
+        </a>
+        <p>A little context. Connected to its sources.</p>
         <nav aria-label="Legal">
           <a href="/terms/">Terms</a>
           <a href="/privacy/">Privacy</a>
+          <a href="#start" onClick={jump("start")}>Back to the start ↑</a>
         </nav>
       </footer>
     </div>
@@ -237,18 +239,20 @@ function EnrollmentCard(props: LandingProps) {
   const [sales, setSales] = useState(false);
   const [newsletter, setNewsletter] = useState(false);
   const statusId = useId();
-  // Each freshly loaded revision asks again: terms unchecked, saved choices shown.
+  // Unverified preferences require fresh terms acceptance; saved choices stay visible.
   useEffect(() => {
-    setTerms(false);
+    if (!state.preferences) setTerms(false);
     setSales(state.preferences?.salesContact ?? false);
     setNewsletter(state.preferences?.newsletter ?? false);
   }, [state.preferences]);
   const busy = state.phase === "signing-in" || state.phase === "checking" || state.phase === "enrolling";
-  const signedIn = live && !!identity && ["consent", "enrolling", "enrolled"].includes(state.phase);
+  const signedIn = live && !!identity && (["consent", "enrolling", "enrolled"].includes(state.phase) || !!state.enrollment?.enrolled);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!terms || !canContinue(state, status, Date.now())) return;
-    props.onSubmit({ salesConsent: sales, newsletterConsent: newsletter });
+    const destination = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value");
+    if (destination !== "instructions" && destination !== "wiki") return;
+    props.onSubmit({ salesConsent: sales, newsletterConsent: newsletter }, destination);
   };
   return (
     <div className="enrollment-card" aria-busy={busy}>
@@ -271,7 +275,7 @@ function EnrollmentCard(props: LandingProps) {
         </>
       ) : signedIn ? (
         <>
-          <h3>{state.phase === "enrolled" ? "Your wiki is ready." : "Review your choices."}</h3>
+          <h3>Review your choices.</h3>
           <div className="identity">
             <span className="avatar" aria-hidden="true">{Array.from((identity!.name || identity!.email).trim())[0]?.toUpperCase() || "?"}</span>
             <div className="identity-details">
@@ -282,59 +286,7 @@ function EnrollmentCard(props: LandingProps) {
           <button type="button" className="link-button signout-button" onClick={props.onSignOut} disabled={state.phase === "enrolling"}>
             Sign out of this browser
           </button>
-          {state.phase === "enrolled" ? (
-            <div className="enrolled">
-              <p>You’re enrolled for today’s demo. Your personal wiki is ready.</p>
-              <div className="enrolled-actions">
-                <a className="primary-button" href="#setup" onClick={jump("setup")}>Connect your coding agent <Arrow /></a>
-                <a className="secondary-button" href={props.wikiHref} onClick={props.onOpenWiki}>Open your wiki <Arrow /></a>
-              </div>
-              {state.unsubscribeToken && (
-                <div>
-                  <button type="button" className="link-button" onClick={props.onWithdraw}>
-                    Withdraw both marketing permissions
-                  </button>
-                  <p>Save this private link before leaving or reloading this page. It works after sign-out and the daily reset. Anyone with it can withdraw both permissions.</p>
-                  <a href={withdrawalLink(state.unsubscribeToken)} target="_blank" rel="noopener noreferrer">Private withdrawal link</a>
-                  <p>Copy the link address to save it. No email is sent.</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <form onSubmit={submit} aria-describedby={statusId}>
-              <p className="preferences-notice">
-                {state.preferences?.revision
-                  ? "Your saved preferences are shown. Review them before continuing."
-                  : "Both optional choices are off unless you turn them on."}
-              </p>
-              <fieldset disabled={state.phase === "enrolling"}>
-                <legend>Your choices</legend>
-                <label className="check-row required">
-                  <input type="checkbox" checked={terms} onChange={(event) => setTerms(event.target.checked)} required />
-                  <span>
-                    I accept the <a href="/terms/" target="_blank" rel="noopener">demo terms</a> and understand that my
-                    demo wiki is deleted daily at 00:00 UTC.
-                    <small>Required to try the demo</small>
-                  </span>
-                </label>
-                <div className="optional-label">OPTIONAL · YOUR CHOICE</div>
-                <label className="check-row">
-                  <input type="checkbox" checked={sales} onChange={(event) => setSales(event.target.checked)} />
-                  <span>PocketContext may contact me by email about WikiContext and commercial offers.</span>
-                </label>
-                <label className="check-row">
-                  <input type="checkbox" checked={newsletter} onChange={(event) => setNewsletter(event.target.checked)} />
-                  <span>Subscribe me to the PocketContext newsletter.</span>
-                </label>
-                <p className="privacy-note">
-                  Read the <a href="/privacy/" target="_blank" rel="noopener">privacy notice</a>.
-                </p>
-                <button className="primary-button continue-button" type="submit" disabled={!canContinue(state, status, now)}>
-                  Accept terms &amp; continue <Arrow />
-                </button>
-              </fieldset>
-            </form>
-          )}
+
         </>
       ) : (
         <>
@@ -355,6 +307,57 @@ function EnrollmentCard(props: LandingProps) {
           <p className="micro">Google identifies you. We never see your Google password.</p>
         </>
       )}
+      {live && <>
+          <form onSubmit={submit} aria-describedby={statusId}>
+            {signedIn && <p className="preferences-notice">
+              {state.preferences?.revision
+                ? "Your saved preferences are shown. Review them before submitting changes."
+                : "Both optional choices are off unless you turn them on."}
+            </p>}
+            <fieldset disabled={!signedIn || busy || !state.preferences}>
+              <legend>Your choices</legend>
+              <label className="check-row required">
+                <input type="checkbox" checked={terms} onChange={(event) => { setTerms(event.target.checked); props.onChoicesChanged(); }} required />
+                <span>
+                  I accept the <a href="/terms/" target="_blank" rel="noopener">demo terms</a> and understand that my
+                  demo wiki is deleted daily at 00:00 UTC.
+                  <small>Required to try the demo</small>
+                </span>
+              </label>
+              <div className="optional-label">OPTIONAL · YOUR CHOICE</div>
+              <label className="check-row">
+                <input type="checkbox" checked={sales} onChange={(event) => { setSales(event.target.checked); props.onChoicesChanged(); }} />
+                <span>PocketContext may contact me by email about WikiContext and commercial offers.</span>
+              </label>
+              <label className="check-row">
+                <input type="checkbox" checked={newsletter} onChange={(event) => { setNewsletter(event.target.checked); props.onChoicesChanged(); }} />
+                <span>Subscribe me to the PocketContext newsletter.</span>
+              </label>
+              <p className="privacy-note">
+                Either optional choice can be left off. Read the <a href="/privacy/" target="_blank" rel="noopener">privacy notice</a>.
+              </p>
+              <div className="consent-actions">
+                <button className="primary-button continue-button" type="submit" name="destination" value="instructions" disabled={!canContinue(state, status, now)}>
+                  Accept terms &amp; show instructions <Arrow />
+                </button>
+                <button className="secondary-button continue-button" type="submit" name="destination" value="wiki" disabled={!canContinue(state, status, now)}>
+                  Accept terms &amp; open wiki <Arrow />
+                </button>
+              </div>
+            </fieldset>
+          </form>
+          {signedIn && state.unsubscribeToken && (
+            <details className="contact-permissions">
+              <summary>Manage contact permissions</summary>
+              <button type="button" className="link-button" onClick={props.onWithdraw} disabled={busy}>
+                Withdraw both marketing permissions
+              </button>
+              <p>Save this private link to withdraw both permissions after sign-out or the daily reset. Anyone with the link can use it.</p>
+              <a href={withdrawalLink(state.unsubscribeToken)} target="_blank" rel="noopener noreferrer">Private withdrawal link</a>
+              <p>Copy the link address to save it. No email is sent.</p>
+            </details>
+          )}
+      </>}
       <p id={statusId} className="form-status" role="status">{state.message}</p>
     </div>
   );

@@ -476,17 +476,21 @@ test("home-only publications update live root while history and explicit links r
 
 
 test("welcome directory includes published pages, onboarding, filters, history and live additions", async ({ page, context, request }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.addInitScript(() => localStorage.setItem("wiki-theme", "dark"));
   await login(page);
   await page.goto("/#/welcome");
   await expect(page.getByRole("heading", { name: "Welcome to our shared context.", exact: true })).toBeVisible();
   const screenshots = process.env.WIKICONTEXT_TEST_SCREENSHOTS || "/tmp";
-  await page.screenshot({ path: `${screenshots}/welcome-desktop-dark.png`, fullPage: true });
-  await page.getByRole("button", { name: "Switch to light theme", exact: true }).click();
+  await expect(page).toHaveTitle("Try WikiContext · Public demo");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+  await expect(page.getByRole("button", { name: /Switch to .* theme/ })).toHaveCount(0);
   await page.screenshot({ path: `${screenshots}/welcome-desktop-light.png`, fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: `${screenshots}/welcome-mobile-light.png`, fullPage: true });
-  await page.getByRole("button", { name: "Switch to dark theme", exact: true }).click();
-  await page.screenshot({ path: `${screenshots}/welcome-mobile-dark.png`, fullPage: true });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.getByRole("button", { name: /Switch to .* theme/ })).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 900 });
   const onboarding = page.getByRole("region", { name: "New to the workspace?", exact: true });
   await expect(onboarding.getByRole("link", { name: /Open onboarding/ })).toBeVisible();

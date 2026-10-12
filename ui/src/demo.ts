@@ -166,12 +166,11 @@ export type OnboardingEvent =
   | { type: "enrollment"; enrollment: Enrollment }
   | { type: "preferences"; preferences: Preferences }
   | { type: "submit" }
-  | { type: "enrolled"; enrollment: Enrollment; unsubscribeToken: string }
+  | { type: "enrolled"; enrollment: Enrollment; unsubscribeToken: string; preferences: Preferences }
   | { type: "conflict" }
   | { type: "failed"; message: string }
   | { type: "refresh-enrollment"; enrollment: Enrollment }
   | { type: "withdrawn"; message: string }
-  | { type: "withdrawn-failed"; message: string }
   | { type: "signed-out"; message: string }
   | { type: "auth-cleared" }
   | { type: "resetting"; message?: string };
@@ -190,20 +189,18 @@ export function onboardingReducer(state: OnboardingState, event: OnboardingEvent
       return { ...state, phase: "checking", preferences: null, message: state.conflict ? state.message : "" };
     case "enrollment":
       if (state.phase !== "checking") return state;
-      return event.enrollment.enrolled
-        ? { ...state, phase: "enrolled", enrollment: event.enrollment, preferences: null }
-        : { ...state, enrollment: event.enrollment };
+      return { ...state, enrollment: event.enrollment };
     case "preferences":
       if (state.phase !== "checking") return state;
-      return { ...state, phase: "consent", preferences: event.preferences };
+      return { ...state, phase: state.enrollment?.enrolled ? "enrolled" : "consent", preferences: event.preferences };
     case "submit":
-      if (state.phase !== "consent" || !state.preferences) return state;
+      if (!["consent", "enrolled"].includes(state.phase) || !state.preferences) return state;
       return { ...state, phase: "enrolling", message: "Saving your choices…" };
     case "enrolled":
       if (state.phase !== "enrolling") return state;
       return {
         ...state, phase: "enrolled", enrollment: event.enrollment, conflict: false,
-        unsubscribeToken: event.unsubscribeToken,
+        unsubscribeToken: event.unsubscribeToken, preferences: event.preferences,
         message: "Enrollment saved for today. No email has been sent.",
       };
     case "conflict":
@@ -215,15 +212,14 @@ export function onboardingReducer(state: OnboardingState, event: OnboardingEvent
     case "failed":
       return {
         ...state,
-        phase: state.phase === "enrolling" ? "consent" : state.phase === "checking" ? "signed-out" : state.phase,
+        phase: state.enrollment?.enrolled ? "enrolled"
+          : state.phase === "enrolling" ? "consent" : state.phase === "checking" ? "signed-out" : state.phase,
         message: event.message,
       };
     case "refresh-enrollment":
       return state.phase === "enrolled" ? { ...state, enrollment: event.enrollment } : state;
     case "withdrawn":
-      return { ...state, unsubscribeToken: "", message: event.message };
-    case "withdrawn-failed":
-      return { ...state, message: event.message };
+      return { ...state, phase: "checking", preferences: null, unsubscribeToken: "", message: event.message };
     case "signed-out":
       return { ...initialOnboarding, message: event.message };
     case "auth-cleared":
@@ -237,7 +233,7 @@ export function onboardingReducer(state: OnboardingState, event: OnboardingEvent
 
 export function canContinue(state: OnboardingState, status: DemoStatus | null, now: number): boolean {
   return (
-    state.phase === "consent" && !!status &&
+    ["consent", "enrolled"].includes(state.phase) && !!status &&
     !!state.preferences && Number.isInteger(state.preferences.revision) && state.preferences.revision >= 0 &&
     pb.authStore.isValid && secondsUntil(status.resetAt, now) > 0
   );
@@ -289,7 +285,7 @@ export async function getPreferences(): Promise<Preferences> {
 export async function enroll(
   status: DemoStatus,
   choices: { salesConsent: boolean; newsletterConsent: boolean; expectedRevision: number },
-): Promise<{ enrollment: Enrollment; unsubscribeToken: string }> {
+): Promise<{ enrollment: Enrollment; unsubscribeToken: string; preferences: Preferences }> {
   if (!isFlag(choices.salesConsent) || !isFlag(choices.newsletterConsent) ||
       !Number.isSafeInteger(choices.expectedRevision) || choices.expectedRevision < 0)
     throw new DemoError(demoMessage(400), 400);
@@ -299,7 +295,7 @@ export async function enroll(
     expectedRevision: choices.expectedRevision,
   });
   const contact = isRecord(value?.contact) ? value.contact : null;
-  if (value?.enrolled !== true || value.generation !== status.generation || !contact || !Number.isSafeInteger(contact.revision))
+  if (value?.enrolled !== true || value.generation !== status.generation || !contact || !Number.isSafeInteger(contact.revision) || (contact.revision as number) <= choices.expectedRevision)
     throw new DemoError("Enrollment could not be verified. Refresh your preferences before retrying.", 0);
   return {
     enrollment: {
@@ -307,6 +303,7 @@ export async function enroll(
       space: typeof value.space === "string" ? value.space : null, usage: {},
     },
     unsubscribeToken: typeof contact.unsubscribeToken === "string" ? contact.unsubscribeToken : "",
+    preferences: { revision: contact.revision as number, salesContact: choices.salesConsent, newsletter: choices.newsletterConsent },
   };
 }
 export async function withdraw(token: string): Promise<void> {

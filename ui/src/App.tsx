@@ -13,7 +13,6 @@ import EvidenceBrowser, { evidenceHref } from "./EvidenceBrowser";
 import { api, pb, selectSpace, sessionGeneration, type Space } from "./api";
 import DemoApp, { type DemoReaderContext } from "./DemoApp";
 import { fetchStatus, formatCountdown, secondsUntil, type StatusResult } from "./demo";
-import { useTheme } from "./theme";
 import SearchResults, { searchHref } from "./SearchResults";
 import { homePageSlug } from "./home";
 import WelcomePage from "./WelcomePage";
@@ -98,7 +97,6 @@ function Reader({ demo }: { demo?: DemoReaderContext }) {
   const [menu, setMenu] = useState(false);
   const [evidenceTitle, setEvidenceTitle] = useState("");
   const [connected, setConnected] = useState(false);
-  const [theme, setTheme] = useTheme();
   const generation = useRef(0);
   useEffect(() => () => { generation.current++; }, []);
   const historyOffset = useRef(0);
@@ -391,7 +389,7 @@ function Reader({ demo }: { demo?: DemoReaderContext }) {
   );
   const pinned = current.publication || undefined;
   // The demo shell owns sign-in; never offer password login there.
-  if (!authenticated) return demo ? null : <Login theme={theme} setTheme={setTheme} />;
+  if (!authenticated) return demo ? null : <Login />;
   const page =
     (!current.publication ||
       snapshot?.publication.id === current.publication) &&
@@ -571,13 +569,6 @@ function Reader({ demo }: { demo?: DemoReaderContext }) {
               </select>
             </label>
             {demo && <a className="demo-setup-link" href={demo.setupHref}>Demo setup</a>}
-            <button
-              className="icon-button"
-              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            >
-              {theme === "dark" ? "☼" : "☾"}
-            </button>
           </div>
         </header>
         {error && (
@@ -896,13 +887,7 @@ function EmptySpace({ demo }: { demo?: DemoReaderContext }) {
     </section>
   );
 }
-function Login({
-  theme,
-  setTheme,
-}: {
-  theme: string;
-  setTheme: (value: string) => void;
-}) {
+function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const login = async (action: () => Promise<unknown>) => {
@@ -928,13 +913,6 @@ function Login({
   };
   return (
     <main className="login-shell">
-      <button
-        className="icon-button login-theme"
-        aria-label="Switch theme"
-        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      >
-        {theme === "dark" ? "☼" : "☾"}
-      </button>
       <section className="login-card">
         <div className="brand-mark large">W</div>
         <div className="page-eyebrow">WIKICONTEXT</div>

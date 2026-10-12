@@ -67,8 +67,15 @@ relationships through cited revisions; properties are read-only in the browser.
 The reader defaults to the account's personal space and shows a selector when
 more than one space is visible. Publications, evidence and search are scoped to
 the selected space. Demo onboarding shows daily consent, quotas and the UTC
-reset countdown; agent installation is offered only when the server advertises
-a released demo client.
+reset countdown. Signing in or restoring a session always shows saved preferences
+and an unchecked terms checkbox, including when opening a reader link. The choices are visible before sign-in. Two buttons accept the terms and open
+either coding-agent instructions or the wiki reader; each saves the displayed
+choices before opening its selected destination. Neither opens on login alone. Agent installation is offered only when
+the server advertises a released demo client.
+
+The demo uses VaultContext’s light-only palette, header navigation and footer
+layout. The browser title is “Try WikiContext · Public demo”; saved theme
+preferences do not change its appearance.
 
 Frontend source is in `ui/`: React, TypeScript and Vite, with bundled Markdown
 rendering and the PocketBase SDK. Content reads use authenticated SQL; the SDK

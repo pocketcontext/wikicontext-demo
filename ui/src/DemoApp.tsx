@@ -14,7 +14,6 @@ import {
   type StatusResult,
 } from "./demo";
 import Landing from "./Landing";
-import { useTheme } from "./theme";
 
 export interface DemoReaderContext {
   generation: string;
@@ -28,8 +27,8 @@ function readerRoute(hash: string) {
 
 /**
  * Public-demo shell: live onboarding only after `/api/demo/status` validates,
- * otherwise a static preview with no authentication. Enrolled visitors see the
- * reader; resets, generation changes and missing enrollment return here.
+ * otherwise a static preview with no authentication. Fresh consent and explicit
+ * navigation open the reader; restoring enrollment alone never navigates.
  */
 export default function DemoApp({
   initial,
@@ -46,9 +45,10 @@ export default function DemoApp({
   const [now, setNow] = useState(() => Date.now());
   const [hash, setHash] = useState(() => location.hash);
   const [session, setSession] = useState(sessionGeneration);
-  const [stayOnSetup, setStayOnSetup] = useState(false);
+  const [reviewedSession, setReviewed] = useState<number | null>(null);
+  const reviewed = reviewedSession === session;
+  const [destination, setDestination] = useState<"choices" | "instructions" | "wiki">("choices");
   const [returnHash, setReturnHash] = useState(() => (readerRoute(location.hash) ? location.hash : "#/"));
-  const [theme, setTheme] = useTheme();
   const signingIn = useRef(false);
   const epoch = useRef(0);
 
@@ -93,6 +93,8 @@ export default function DemoApp({
     const current = statusRef.current;
     if (!current || !pb.authStore.isValid) return;
     const own = ++epoch.current;
+    setReviewed(null);
+    setDestination("choices");
     dispatch({ type: "check" });
     try {
       await api.refreshSession();
@@ -105,7 +107,7 @@ export default function DemoApp({
       const enrollment = await getEnrollment(current);
       if (own !== epoch.current) return;
       dispatch({ type: "enrollment", enrollment });
-      if (!enrollment.enrolled) await loadPreferences(own);
+      await loadPreferences(own);
     } catch (error) {
       fail(error, own);
     }
@@ -113,6 +115,8 @@ export default function DemoApp({
 
   // Re-evaluate whenever the stored identity changes (sign-in, sign-out, other tabs).
   useEffect(() => {
+    setReviewed(null);
+    setDestination("choices");
     if (!status) return; // Preview: stored credentials are never used.
     if (!pb.authStore.isValid) {
       epoch.current++;
@@ -195,17 +199,25 @@ export default function DemoApp({
       });
     });
   };
-  const submit = async (choices: { salesConsent: boolean; newsletterConsent: boolean }) => {
-    if (!status || state.phase !== "consent" || !state.preferences) return;
+  const submit = async (choices: { salesConsent: boolean; newsletterConsent: boolean }, target: "instructions" | "wiki") => {
+    if (!status || !["consent", "enrolled"].includes(state.phase) || !state.preferences) return;
     const own = epoch.current;
+    setReviewed(null);
+    setDestination("choices");
     dispatch({ type: "submit" });
     try {
       const outcome = await enroll(status, { ...choices, expectedRevision: state.preferences.revision });
       if (own !== epoch.current || !pb.authStore.isValid) return;
-      setReturnHash(readerRoute(location.hash) ? location.hash : returnHash);
-      setStayOnSetup(true);
+      const wikiHash = readerRoute(location.hash) ? location.hash : returnHash;
+      setReturnHash(wikiHash);
+      setReviewed(session);
+      setDestination(target);
+      if (target === "wiki") {
+        location.hash = wikiHash;
+        setHash(wikiHash);
+      }
       // Re-read enrollment so usage and the personal space come from the server.
-      dispatch({ type: "enrolled", enrollment: outcome.enrollment, unsubscribeToken: outcome.unsubscribeToken });
+      dispatch({ type: "enrolled", enrollment: outcome.enrollment, unsubscribeToken: outcome.unsubscribeToken, preferences: outcome.preferences });
       void getEnrollment(status).then((enrollment) => {
         if (own === epoch.current && enrollment.enrolled) dispatch({ type: "refresh-enrollment", enrollment });
       }).catch(() => {});
@@ -224,29 +236,38 @@ export default function DemoApp({
   const signOut = () => {
     if (state.phase === "enrolling") return;
     epoch.current++;
-    setStayOnSetup(false);
+    setReviewed(null);
+    setDestination("choices");
     api.logout();
     dispatch({ type: "signed-out", message: "Signed out of this browser. Existing coding-agent sessions are unchanged." });
   };
   const withdrawConsent = async () => {
     const token = state.unsubscribeToken;
-    if (!token) return;
+    if (!token || state.phase !== "enrolled") return;
+    const own = epoch.current;
+    setReviewed(null);
+    setDestination("choices");
+    dispatch({ type: "submit" });
     try {
       await withdraw(token);
+      if (own !== epoch.current) return;
       dispatch({ type: "withdrawn", message: "Both marketing permissions withdrawn." });
+      try { await loadPreferences(own); }
+      catch { if (own === epoch.current) dispatch({ type: "failed", message: "Withdrawal succeeded. Sign out and sign in again before saving new preferences." }); }
     } catch (error) {
-      dispatch({ type: "withdrawn-failed", message: error instanceof Error ? error.message : "Withdrawal failed." });
+      if (own === epoch.current) dispatch({ type: "failed", message: error instanceof Error ? error.message : "Withdrawal failed." });
     }
   };
   const openWiki = () => {
-    setStayOnSetup(false);
+    if (!reviewed || state.phase !== "enrolled") return;
+    setDestination("wiki");
     if (location.hash === returnHash) setHash(location.hash);
   };
 
   const identity = pb.authStore.isValid && pb.authStore.record
     ? { email: String(pb.authStore.record.email || ""), name: String(pb.authStore.record.name || "") }
     : null;
-  if (status && state.phase === "enrolled" && identity && !stayOnSetup && !hash.startsWith("#/setup") && !expired)
+  if (status && state.phase === "enrolled" && identity && reviewed && destination === "wiki" && readerRoute(hash) && !expired)
     return <>{renderReader({ generation: status.generation, resetAt: status.resetAt, setupHref: "#/setup" }, session)}</>;
   return (
     <Landing
@@ -256,16 +277,17 @@ export default function DemoApp({
       state={state}
       identity={identity}
       now={now}
-      theme={theme}
-      setTheme={setTheme}
       onSignIn={signIn}
       onCancelSignIn={() => { signingIn.current = false; api.cancelGoogleLogin(); dispatch({ type: "signin-failed", message: "Google sign-in cancelled. You can try again." }); }}
       onSignOut={signOut}
-      onSubmit={(choices) => void submit(choices)}
+      onSubmit={(choices, target) => void submit(choices, target)}
       onWithdraw={() => void withdrawConsent()}
       onRetryStatus={() => void fetchStatus().then((next) => { setResult(next); if (next.kind === "demo") dispatch({ type: "signed-out", message: "" }); })}
       wikiHref={returnHash}
       onOpenWiki={openWiki}
+      setupRequested={hash.startsWith("#/setup")}
+      showInstructions={reviewed && destination === "instructions" && state.phase === "enrolled"}
+      onChoicesChanged={() => { setReviewed(null); setDestination("choices"); }}
     />
   );
 }
