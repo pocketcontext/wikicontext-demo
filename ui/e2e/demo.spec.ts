@@ -370,6 +370,16 @@ test("mobile layout, legal pages, unavailable and reset states", async ({ page, 
   await page.getByRole("button", { name: "Accept terms & show instructions", exact: true }).click();
   await expectInstructions(page);
   await expect(page.getByLabel("Coding-agent setup instructions")).toBeVisible();
+  const help = page.locator(".codespaces-help");
+  await expect(help).toBeVisible();
+  await expect(help).toContainText(new URL(page.url()).origin);
+  await expect(help.getByRole("button", { name: "Copy setup prompt", exact: true })).toBeVisible();
+  await help.locator("summary").first().click();
+  await expect(help).toContainText("gh codespace ports forward 8765:8765");
+  await help.locator("summary").last().click();
+  await page.setViewportSize({ width: 320, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.setViewportSize({ width: 390, height: 844 });
   const publishStep = page.locator("#setup summary").filter({ hasText: "Publish a sample document" });
   await publishStep.focus();
   await page.keyboard.press("Enter");

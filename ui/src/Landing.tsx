@@ -1,3 +1,4 @@
+import CodespacesHelp from "./CodespacesHelp";
 import { withdrawalLink } from "./Withdrawal";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
@@ -413,6 +414,7 @@ function AgentSetup({ status, email, wikiHref, onOpenWiki }: { status: DemoStatu
   };
   return (
     <div className="agent-setup">
+      <CodespacesHelp installation={installation} />
       <p className="agent-note">Copy the instructions into your coding agent, then use the next two steps as a guide. This page cannot confirm what your agent has completed.</p>
       <div className="guide-steps">
         <details open>

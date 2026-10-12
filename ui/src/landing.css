@@ -155,3 +155,5 @@
   .countdown { padding-top:14px; }
   #enrollment-card { width:100%; max-width:460px; justify-self:center; }
 }
+
+.codespaces-help {padding:20px;background:#eef1e7;border:1px solid var(--border);border-radius:8px;margin-bottom:24px;font-size:13px;min-width:0}.codespaces-help h3{margin-top:0}.codespaces-help summary{cursor:pointer;padding:12px 0;font-weight:600}.codespaces-help code{overflow-wrap:anywhere}.codespaces-help .codebox{min-width:0}.codespaces-help pre{white-space:pre-wrap;overflow-wrap:anywhere}
