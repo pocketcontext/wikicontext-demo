@@ -51,16 +51,34 @@ export default function Landing(props: LandingProps) {
   const enrolled = live && !!state.enrollment?.enrolled;
   const setupRef = useRef<HTMLElement>(null);
   const startRef = useRef<HTMLElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const focusedIdentity = useRef<string | null>(null);
+  const setupWasRequested = useRef(false);
   useEffect(() => {
     // #/setup is an application route, not a native #setup document anchor.
     // Before consent, take visitors to the form rather than hidden instructions.
     const target = props.showInstructions ? setupRef.current
-      : props.setupRequested ? startRef.current : null;
+      : props.setupRequested && !setupWasRequested.current ? startRef.current : null;
+    setupWasRequested.current = props.setupRequested;
     target?.focus({ preventScroll: true });
     target?.scrollIntoView?.({
       behavior: matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     });
   }, [props.showInstructions, props.setupRequested]);
+  const verifiedIdentity = live && identity && state.preferences ? identity.email : null;
+  useEffect(() => {
+    if (!identity) focusedIdentity.current = null;
+    if (!verifiedIdentity || focusedIdentity.current === verifiedIdentity) return;
+    focusedIdentity.current = verifiedIdentity;
+    // Authentication only reveals choices, never the guide or reader.
+    if (!props.showInstructions) {
+      cardRef.current?.focus({ preventScroll: true });
+      cardRef.current?.scrollIntoView?.({
+        behavior: matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start",
+      });
+    }
+  }, [verifiedIdentity, identity, props.showInstructions]);
   return (
     <div className="landing">
       <a className="skip-link landing-skip" href="#main" onClick={(event) => { event.preventDefault(); document.getElementById("main")?.focus(); }}>
@@ -120,6 +138,31 @@ export default function Landing(props: LandingProps) {
             </small>
           </div>
         </section>
+        <section ref={startRef} id="start" className="start wrap" aria-labelledby="start-title" tabIndex={-1}>
+          <div className="start-copy">
+            <p className="eyebrow">MAKE YOURSELF AT HOME</p>
+            <h2 id="start-title">Sign in, accept the terms,<br /><em>connect your agent.</em></h2>
+            <p>Any verified Google account works, including personal Gmail and Google Workspace accounts.</p>
+            <ul className="expectations">
+              <li>A private personal wiki space only you can read</li>
+              <li>Your existing terminal and coding agent</li>
+              <li>Wiki content and demo accounts reset at 00:00 UTC</li>
+            </ul>
+          </div>
+          <div ref={cardRef} id="enrollment-card" tabIndex={-1} aria-label="Demo sign-in and choices">
+            <EnrollmentCard {...props} />
+          </div>
+        </section>
+        {enrolled && props.showInstructions && (
+          <section ref={setupRef} id="setup" className="setup wrap" aria-labelledby="setup-title" tabIndex={-1}>
+            <p className="eyebrow">NEXT STEP</p>
+            <h2 id="setup-title">Connect your coding agent.</h2>
+            <p>You’re enrolled for today’s demo. Follow these steps with a harmless sample document.</p>
+            <AgentSetup status={status} email={identity?.email || ""} wikiHref={props.wikiHref} onOpenWiki={props.onOpenWiki} />
+            <Restrictions />
+            <Usage status={status} usage={state.enrollment?.usage ?? null} />
+          </section>
+        )}
         <section id="how" className="how wrap" aria-labelledby="how-title" tabIndex={-1}>
           <p className="eyebrow">THE ROUND TRIP</p>
           <h2 id="how-title">From a file to a cited page.</h2>
@@ -141,29 +184,6 @@ export default function Landing(props: LandingProps) {
             </li>
           </ol>
         </section>
-        <section ref={startRef} id="start" className="start wrap" aria-labelledby="start-title" tabIndex={-1}>
-          <div className="start-copy">
-            <p className="eyebrow">MAKE YOURSELF AT HOME</p>
-            <h2 id="start-title">Sign in, accept the terms,<br /><em>connect your agent.</em></h2>
-            <p>Any verified Google account works, including personal Gmail and Google Workspace accounts.</p>
-            <ul className="expectations">
-              <li>A private personal wiki space only you can read</li>
-              <li>Your existing terminal and coding agent</li>
-              <li>Wiki content and demo accounts reset at 00:00 UTC</li>
-            </ul>
-          </div>
-          <EnrollmentCard {...props} />
-        </section>
-        {enrolled && props.showInstructions && (
-          <section ref={setupRef} id="setup" className="setup wrap" aria-labelledby="setup-title" tabIndex={-1}>
-            <p className="eyebrow">NEXT STEP</p>
-            <h2 id="setup-title">Connect your coding agent.</h2>
-            <p>You’re enrolled for today’s demo. Follow these steps with a harmless sample document.</p>
-            <AgentSetup status={status} email={identity?.email || ""} wikiHref={props.wikiHref} onOpenWiki={props.onOpenWiki} />
-            <Restrictions />
-            <Usage status={status} usage={state.enrollment?.usage ?? null} />
-          </section>
-        )}
         <section id="data" className="details wrap" aria-labelledby="data-title" tabIndex={-1}>
           <div>
             <p className="eyebrow">CLEAR FROM THE START</p>
@@ -336,6 +356,7 @@ function EnrollmentCard(props: LandingProps) {
               <p className="privacy-note">
                 Either optional choice can be left off. Read the <a href="/privacy/" target="_blank" rel="noopener">privacy notice</a>.
               </p>
+              {signedIn && !terms && <p className="terms-guidance">Select the terms checkbox to continue.</p>}
               <div className="consent-actions">
                 <button className="primary-button continue-button" type="submit" name="destination" value="instructions" disabled={!canContinue(state, status, now)}>
                   Accept terms &amp; show instructions <Arrow />

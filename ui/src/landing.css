@@ -138,3 +138,20 @@
   .landing .nav-cta { padding:9px 10px; }
 }
 @media(max-width:360px) { .landing .wrap { width:calc(100% - 36px); } .landing-header .landing-brand { font-size:15px; gap:4px; } .landing-header .nav-cta { font-size:10px; gap:4px; padding:9px 7px; } .enrollment-card { padding:20px; } }
+
+#enrollment-card { min-width:0; scroll-margin-top:20px; }
+.landing .terms-guidance { font-size:12px; margin:0 0 12px; }
+@media(max-width:760px) {
+  .landing .hero { padding-block:28px; }
+  .landing .hero h1 { margin-bottom:20px; }
+  .landing .intro { margin-bottom:22px; }
+  .landing .how,.landing .start,.landing .setup,.landing .details { padding-block:32px; }
+  .landing .start { gap:18px; }
+  .landing .expectations { margin-bottom:0; line-height:1.7; }
+  .landing .steps { margin-top:24px; gap:18px; }
+  .landing .steps li { padding-top:16px; }
+  .landing .steps h3 { margin-top:10px; }
+  .landing .reset-strip { padding:18px; gap:16px; }
+  .countdown { padding-top:14px; }
+  #enrollment-card { width:100%; max-width:460px; justify-self:center; }
+}

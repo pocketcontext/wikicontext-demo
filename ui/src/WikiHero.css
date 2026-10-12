@@ -10,6 +10,8 @@
 .wiki-hero-lines i:nth-child(2) { width:100%; }
 .wiki-hero-lines i:nth-child(3) { width:63%; }
 .wiki-hero-source-foot { display:block; font-size:10px; color:var(--muted,#777c6c); margin-top:14px; }
+.wiki-hero-arrow { display:inline-block; width:18px; height:18px; vertical-align:middle; flex:none; }
+.wiki-hero-transfer .wiki-hero-arrow { width:32px; height:32px; }
 .wiki-hero-transfer { position:absolute; top:134px; right:13%; font-size:32px; color:var(--accent,#526648); transform:rotate(-25deg); }
 .wiki-hero-agent { position:absolute; top:178px; left:7%; width:89%; border:1px solid #455045; border-radius:10px; background:#26372d; color:#e8ecdf; box-shadow:0 19px 40px #182b2420; transform:rotate(3deg); }
 .wiki-hero-terminal-bar { display:flex; align-items:center; gap:22px; padding:12px 17px; border-bottom:1px solid #ffffff17; font-size:9px; letter-spacing:.12em; color:#bdc8b6; }
@@ -36,5 +38,30 @@
 .wiki-hero-citation div > span { color:var(--muted,#777c6c); }
 .wiki-hero-example { position:absolute; bottom:0; left:7%; font-size:8px; letter-spacing:.13em; color:var(--muted,#777c6c); }
 @media(max-width:1000px) and (min-width:761px) { .wiki-hero-source { width:205px; }.wiki-hero-agent-body { font-size:9px; padding-inline:15px; }.wiki-hero-page { width:235px; right:-2%; } }
-@media(max-width:760px) { .wiki-hero-art { max-width:450px; margin-block:24px 42px; }.wiki-hero-scene { height:550px; }.wiki-hero-source { left:3%; }.wiki-hero-agent { left:3%; width:94%; }.wiki-hero-page { right:2%; }.wiki-hero-example { bottom:0; left:4%; } }
-@media(max-width:380px) { .wiki-hero-agent-body { font-size:10px; padding-inline:16px; }.wiki-hero-source { width:210px; }.wiki-hero-page { width:245px; }.wiki-hero-transfer { right:7%; } }
+/* Keep the small-screen example readable without scaling down its text. */
+@media(max-width:760px) {
+  .wiki-hero-art { max-width:400px; margin-block:8px 16px; }
+  .wiki-hero-scene { height:auto; display:grid; gap:8px; padding:4px 0; }
+  .wiki-hero-orbit { top:20px; width:94%; left:3%; }
+  .wiki-hero-source,.wiki-hero-agent,.wiki-hero-page { position:relative; inset:auto; transform:none; }
+  .wiki-hero-source { width:84%; padding:10px 14px; margin-left:2%; }
+  .wiki-hero-source-top,.wiki-hero-page-top { font-size:10px; }
+  .wiki-hero-document { width:18px; height:20px; font-size:19px; }
+  .wiki-hero-source > strong { margin:6px 0 0; font-size:14px; }
+  .wiki-hero-lines,.wiki-hero-source-foot { display:none; }
+  .wiki-hero-transfer { top:27px; right:3%; transform:none; }
+  .wiki-hero-transfer .wiki-hero-arrow { width:24px; height:24px; }
+  .wiki-hero-agent { width:94%; margin-left:3%; }
+  .wiki-hero-terminal-bar { gap:14px; padding:8px 12px; font-size:10px; }
+  .wiki-hero-agent-body { padding:8px 12px 10px; font-size:11px; line-height:1.65; }
+  .wiki-hero-prompt { margin-bottom:5px; }
+  .wiki-hero-published { display:none; }
+  .wiki-hero-page { width:88%; margin-left:auto; margin-right:2%; padding:10px 14px; }
+  .wiki-hero-live { font-size:10px; }
+  .wiki-hero-page > strong { margin:7px 0 4px; font-size:16px; }
+  .landing .wiki-hero-page p { margin:0 0 7px; font-size:12px; line-height:1.5; }
+  .wiki-hero-page sup { font-size:9px; }
+  .wiki-hero-citation { padding-top:7px; }
+  .wiki-hero-citation b,.wiki-hero-citation div > span { font-size:11px; line-height:1.4; }
+  .wiki-hero-example { position:static; margin-left:4%; font-size:9px; }
+}

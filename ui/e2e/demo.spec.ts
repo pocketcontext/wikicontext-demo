@@ -9,6 +9,8 @@ async function signIn(page: Page, request: APIRequestContext, name: string) {
   await page.evaluate(value => localStorage.setItem("wikicontext.reader.auth", JSON.stringify(value)), session);
   await page.reload();
   await expect(page.getByRole("checkbox", { name: /I accept the demo terms/ })).toBeEnabled();
+  await expect(page.locator("#enrollment-card")).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Review your choices.", exact: true })).toBeInViewport();
 }
 
 async function expectConsentGate(page: Page) {
@@ -100,6 +102,7 @@ test("daily consent, conflicts, agent setup and private live reader", async ({ p
   const terms = page.getByRole("checkbox", { name: /I accept the demo terms/ });
   const submit = page.getByRole("button", { name: "Accept terms & show instructions", exact: true });
   await expect(submit).toBeEnabled();
+  await expect(page.getByText("Select the terms checkbox to continue.", { exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /commercial offers/ })).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: /newsletter/ })).not.toBeChecked();
   let submissions = 0;
@@ -262,10 +265,8 @@ test("restored enrollment and direct destinations require fresh consent and an e
     await expect(sales).toBeChecked();
     await expect(newsletter).not.toBeChecked();
     await expectConsentGate(page);
-    if (destination === "/#/setup") {
-      await expect(page.locator("#start")).toBeFocused();
-      await expect(page.locator("#start")).toBeInViewport();
-    }
+    await expect(page.locator("#enrollment-card")).toBeFocused();
+    await expect(page.getByRole("heading", { name: "Review your choices.", exact: true })).toBeInViewport();
     await submit.click();
     await expect(terms).toBeFocused();
     await expectConsentGate(page);
@@ -281,8 +282,8 @@ test("restored enrollment and direct destinations require fresh consent and an e
   await expect(page.getByRole("heading", { name: "Your wiki is empty — for now" })).toBeVisible();
   await page.getByRole("link", { name: "Demo setup", exact: true }).click();
   await expectConsentGate(page);
-  await expect(page.locator("#start")).toBeFocused();
-  await expect(page.locator("#start")).toBeInViewport();
+  await expect(page.locator("#enrollment-card")).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Review your choices.", exact: true })).toBeInViewport();
   await expect(sales).toBeChecked();
   await terms.check();
   await page.getByRole("button", { name: "Accept terms & open wiki", exact: true }).click();
@@ -356,6 +357,9 @@ test("mobile layout, legal pages, unavailable and reset states", async ({ page, 
   await expect(page.getByRole("button", { name: /Switch to .* theme/ })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Explore the demo" })).toBeInViewport();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  const onboarding = await page.locator("#start").boundingBox();
+  const workflow = await page.locator("#how").boundingBox();
+  expect(onboarding && workflow && onboarding.y + onboarding.height <= workflow.y).toBeTruthy();
   const legal = await request.get("/terms/"); expect(legal.ok()).toBeTruthy();
   expect(await legal.text()).toContain("00:00 UTC");
   await signIn(page, request, "mobile");
@@ -432,6 +436,9 @@ test('Google popup callback persists login and localStorage.clear signs out othe
   const popup = await popupPromise;
   await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeEnabled();
   await expect.poll(() => popup.isClosed()).toBeTruthy();
+  await expect(page.locator("#enrollment-card")).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Review your choices.", exact: true })).toBeInViewport();
+  await expectConsentGate(page);
   expect(await page.evaluate(() => !!JSON.parse(localStorage.getItem('wikicontext.reader.auth')!).token)).toBeTruthy();
   await page.reload();
   await expect(page.getByRole('checkbox', { name: /I accept the demo terms/ })).toBeEnabled();
