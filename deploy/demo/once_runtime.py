@@ -31,7 +31,7 @@ PRIMARY={'WIKICONTEXT_S3_'+key for key in ('BUCKET','ENDPOINT','REGION','ACCESS_
 REPLICA={'LITESTREAM_'+key for key in ('BUCKET','ENDPOINT','REGION','PATH','ACCESS_KEY_ID','SECRET_ACCESS_KEY')}
 CONTACTS={'CONTACTS_LITESTREAM_'+key for key in ('BUCKET','ENDPOINT','REGION','PATH','ACCESS_KEY_ID','SECRET_ACCESS_KEY')}
 REQUIRED=PRIMARY|REPLICA|CONTACTS|{'WIKICONTEXT_GOOGLE_CLIENT_ID','WIKICONTEXT_GOOGLE_CLIENT_SECRET','WIKICONTEXT_DEMO_CONTACT_TOKEN'}
-OPTIONAL={'WIKICONTEXT_S3_FORCE_PATH_STYLE','LITESTREAM_SYNC_INTERVAL','CONTACTS_LITESTREAM_RETENTION_HOURS','CONTACTS_LITESTREAM_SYNC_INTERVAL'}
+OPTIONAL={'WIKICONTEXT_DEMO_EXPORT_CREDENTIALS_FILE','WIKICONTEXT_S3_FORCE_PATH_STYLE','LITESTREAM_SYNC_INTERVAL','CONTACTS_LITESTREAM_RETENTION_HOURS','CONTACTS_LITESTREAM_SYNC_INTERVAL'}
 DATABASES=('data.db','auxiliary.db','contacts.db')
 MAX_DATABASE=512*1024*1024
 
@@ -236,7 +236,7 @@ class Backend:
         self.processes.pop(name,None)
         if code not in (0,-signal.SIGTERM):raise RuntimeErrorSafe('child did not exit cleanly')
     def app_env(self,day):
-        env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':str(self.root/'runtime'),**{k:v for k,v in self.bindings.items() if not k.startswith('CONTACTS_LITESTREAM_')}}
+        env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':str(self.root/'runtime'),**{k:v for k,v in self.bindings.items() if not k.startswith('CONTACTS_LITESTREAM_') and k != 'WIKICONTEXT_DEMO_EXPORT_CREDENTIALS_FILE'}}
         env.update(WIKICONTEXT_DEMO_MODE='true',WIKICONTEXT_DEMO_ONCE='true',WIKICONTEXT_DEMO_ONCE_CHILD='app',
                    TMPDIR=str(self.root/'runtime/run'),
                    WIKICONTEXT_DEMO_ONCE_ROOT=str(self.root),WIKICONTEXT_DEMO_GENERATION=day,
@@ -258,7 +258,7 @@ class Backend:
     def start_contacts(self,initialize=False):
         if 'contacts' in self.processes and self.processes['contacts'].poll() is None:return
         self.prepare_storage('contacts')
-        env={'WIKICONTEXT_DEMO_ONCE_CHILD':'contacts','PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':str(self.root/'persistent'),**{k:v for k,v in self.bindings.items() if k.startswith('CONTACTS_LITESTREAM_') or k=='WIKICONTEXT_DEMO_CONTACT_TOKEN'}}
+        env={'WIKICONTEXT_DEMO_ONCE_CHILD':'contacts','PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':str(self.root/'persistent'),**{k:v for k,v in self.bindings.items() if k.startswith('CONTACTS_LITESTREAM_') or k in ('WIKICONTEXT_DEMO_CONTACT_TOKEN', 'WIKICONTEXT_DEMO_EXPORT_CREDENTIALS_FILE')}}
         args=[sys.executable,self.contacts,'--database',str(self.root/'persistent/contacts.db')]
         if initialize:self.execute(args+['init'],env)
         self.launch('contacts',args+['start'],env)
