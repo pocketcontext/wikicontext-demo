@@ -28,7 +28,7 @@ bypassing limits. After a reset, sign in and enroll again before resuming.
 
 ## Identity and safety
 
-Use the existing default `users` identity. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`, then use `wikicontext login --google` or `WIKICONTEXT_USER_PASSWORD`. Ask for missing configuration; never search unrelated files for secrets. Use ordinary user credentials, never superuser credentials for knowledge work. Immutable records are edited by publishing new revisions.
+Use the existing default `users` identity. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`, then use `wikicontext login --google` or `WIKICONTEXT_USER_PASSWORD`. The session token is saved with mode 0600 in `$XDG_STATE_HOME/wikicontext/` (default `~/.local/state/wikicontext/`), or in `WIKICONTEXT_SESSION_DIR` when set, so clearing `~/.cache` does not sign you out; a session left in `~/.cache/wikicontext/` by an older client is moved there on first use, and `logout` removes both. Ask for missing configuration; never search unrelated files for secrets. Use ordinary user credentials, never superuser credentials for knowledge work. Immutable records are edited by publishing new revisions.
 
 ## Spaces
 

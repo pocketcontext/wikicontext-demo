@@ -23,7 +23,7 @@ def main():
         assert json.loads(snapshot.read_text())==schema,'Review and regenerate SQL schema snapshot'
         assert json.loads((ROOT/'src/wikicontext_client/schema.json').read_text()) == schema
         skill=Path(tmp)/'portable';skill.mkdir();shutil.copy2(ROOT / 'skills/wikicontext/wikicontext', skill / 'wikicontext')
-        env={**os.environ,'HOME':tmp,'XDG_CACHE_HOME':str(Path(tmp)/'cache'),'WIKICONTEXT_URL':request.base_url,'WIKICONTEXT_USER_EMAIL':'agent@example.com','WIKICONTEXT_USER_PASSWORD':'SyntheticUserPassword123!'}
+        env={**{k:v for k,v in os.environ.items() if k!='WIKICONTEXT_SESSION_DIR'},'HOME':tmp,'XDG_CACHE_HOME':str(Path(tmp)/'cache'),'XDG_STATE_HOME':str(Path(tmp)/'state'),'WIKICONTEXT_URL':request.base_url,'WIKICONTEXT_USER_EMAIL':'agent@example.com','WIKICONTEXT_USER_PASSWORD':'SyntheticUserPassword123!'}
         trace_output = Path(tmp) / 'capture.jsonl'
         if args.trace:
             env['OBSERVECONTEXT_CAPTURE_V1'] = json.dumps(dict(version=1, url=request.base_url,
@@ -97,8 +97,9 @@ def main():
         cli('publish',clearing['id'],'--expected-revision',str(cleared['revision']))
         latest=cli('sql','SELECT home FROM publications ORDER BY sequence DESC LIMIT 1')
         assert latest['rows']==[['']]
-        cache=list((Path(tmp)/'cache/wikicontext').glob('*.json'))
-        assert cache and all(p.stat().st_mode & 0o077 == 0 for p in cache)
+        sessions=list((Path(tmp)/'state/wikicontext').glob('*.json'))
+        assert sessions and all(p.stat().st_mode & 0o077 == 0 for p in sessions)
+        assert not list((Path(tmp)/'cache/wikicontext').glob('*.json'))
         # Creates default to the selected space; a foreign or unknown space is indistinguishable.
         assert cli('get','pages',page['id'])['space']==me['space']
         cli('create','pages',json.dumps({'slug':'elsewhere','kind':'concept'}),'--space','missing00000000',expected=2)
@@ -109,6 +110,6 @@ def main():
             assert any(event['method'] == 'POST' and event['route'] == '/api/collections/sources/records' for event in events)
             assert all(not event.get('sql') and not event['route'].startswith('/api/files/') for event in events)
 
-    print('PASS: copied skill, schema, ingestion, published queries, lint, export, conflicts and private cache')
+    print('PASS: copied skill, schema, ingestion, published queries, lint, export, conflicts and private session')
 
 if __name__=='__main__':main()
