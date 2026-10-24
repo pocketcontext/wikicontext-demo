@@ -25,7 +25,7 @@ class DeploymentTests(unittest.TestCase):
     def test_demo_cd_has_independent_gates_and_no_production_path(self):
         self.assertEqual(DEMO_DEPLOY.splitlines()[0].strip(), "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.WIKICONTEXT_DEMO_DEPLOY_ENABLED == 'true' && vars.WIKICONTEXT_DEMO_DEPLOY_PAUSED != 'true'")
         self.assertIn('    needs:\n      - demo_manifest\n', DEMO_DEPLOY)
-        self.assertIn('    environment:\n      name: pocketdeploy-v1\n', DEMO_DEPLOY)
+        self.assertIn('    environment:\n      name: pocketdeploy-v2\n', DEMO_DEPLOY)
         self.assertIn('      group: deploy-wikicontext-demo\n      cancel-in-progress: false', DEMO_DEPLOY)
         self.assertNotIn('DEMO_DIGEST', DEMO_DEPLOY)
         self.assertNotIn('always()', DEMO_DEPLOY)
@@ -43,7 +43,7 @@ class DeploymentTests(unittest.TestCase):
             self.assertNotIn(forbidden, WORKFLOW)
         import re
         self.assertEqual(set(re.findall(r'ghcr\.io/pocketcontext/[a-z-]+', WORKFLOW)), {'ghcr.io/pocketcontext/wikicontext-demo'})
-        self.assertEqual(re.findall(r'environment:\n\s+name: (\S+)', WORKFLOW), ['pocketdeploy-v1'])
+        self.assertEqual(re.findall(r'environment:\n\s+name: (\S+)', WORKFLOW), ['pocketdeploy-v2'])
         self.assertEqual(set(re.findall(r'secrets\.([A-Z_]+)', WORKFLOW)), {'GITHUB_TOKEN', 'SSH_PRIVATE_KEY'})
 
     def test_demo_ssh_trigger_only_receipt_and_failures(self):

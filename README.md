@@ -270,7 +270,7 @@ Regenerate the SQL reference only after reviewing intentional changes:
 configuration, persistence, crash restore and graceful shutdown checks.
 Main-branch image publication requires the application and native container
 gates plus `WIKICONTEXT_DEMO_PUBLISH=true`; deployment uses the repository-specific
-`pocketdeploy-v1` environment and demo deployment variables. See
+`pocketdeploy-v2` environment and demo deployment variables. See
 [the release contract](docs/ci-and-deployment.md) and
 [current validation evidence](docs/demo-validation.md).
 
@@ -353,7 +353,7 @@ and deletes its own object to prove verification fails closed.
 The separate experiment workflow was removed upstream. The retained verification
 tools below target historical production infrastructure and must not be used to
 validate this demo. They are not automatic deployment paths or authorization to
-modify a live service. Demo releases use the `pocketdeploy-v1` environment. See the
+modify a live service. Demo releases use the `pocketdeploy-v2` environment. See the
 [common CI and deployment contract](docs/ci-and-deployment.md).
 
 For the standalone recovery test, set disposable MinIO S3 and Litestream settings

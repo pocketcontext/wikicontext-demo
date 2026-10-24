@@ -2,7 +2,7 @@
 
 **Live since 11 October 2026.** This repository builds `ghcr.io/pocketcontext/wikicontext-demo`
 for `https://wiki-demo.pocketcontext.com` on the
-`pocketdeploy-v1` host. Production WikiContext (`wiki.pocketcontext.com`,
+`pocketdeploy-v2` host. Production WikiContext (`wiki.pocketcontext.com`,
 `ghcr.io/pocketcontext/wikicontext`) is deployed only from `pocketcontext/wikicontext`;
 never point this image, its buckets or its workflows at production. Release
 controls are in [CI and deployment](ci-and-deployment.md); the demo lifecycle,

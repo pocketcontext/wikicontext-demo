@@ -1,7 +1,7 @@
 # Demo reset and durable contact operations
 
 **Status: live since 11 October 2026.** The demo runs at
-`https://wiki-demo.pocketcontext.com` on `pocketdeploy-v1` alongside Vault Demo,
+`https://wiki-demo.pocketcontext.com` on `pocketdeploy-v2` alongside Vault Demo,
 with separate OAuth configuration, DNS, volume and three private EU buckets.
 Publication and restricted standard CD are enabled and unpaused. Public readiness,
 assets, legal pages, installation and authentication-method checks passed; real
@@ -233,7 +233,7 @@ The browser UI in `ui/` uses the API contract above for Google admission, daily 
 
 ## Hosting plan
 
-The demo targets the `pocketdeploy-v1` host alongside VaultContext Demo. ONCE
+The demo targets the `pocketdeploy-v2` host alongside VaultContext Demo; its buckets keep their original `pocketdeploy-v1` names. ONCE
 manages the application, route and named volume through standard PocketDeploy.
 The application-owned supervisor (`WIKICONTEXT_DEMO_ONCE=true`) owns readiness,
 nginx ingress, the single writer, three replicas, 00:00 UTC reset and 00:05 contact

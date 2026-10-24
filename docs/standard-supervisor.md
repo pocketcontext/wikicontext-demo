@@ -130,7 +130,7 @@ or failed drain produces a failed exit, which stop-first delivery must reject.
 
 ## Standard delivery
 
-The private `pocketdeploy-v1` repository declares this application with stop-first
+The private `pocketdeploy-v2` repository declares this application with stop-first
 delivery, 900-second stop/readiness budgets and independent DNS. This is a fresh
 installation: start normal convergence, then explicitly initialize the new
 application through its private control before readiness times out, as described

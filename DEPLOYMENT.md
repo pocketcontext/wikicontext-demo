@@ -82,7 +82,7 @@ remain unverified; these release checks do not claim that evidence.
 
 ## Initial live deployment — 11 October 2026
 
-`https://wiki-demo.pocketcontext.com` is live on the existing `pocketdeploy-v1`
+`https://wiki-demo.pocketcontext.com` is live on the existing `pocketdeploy-v2`
 OCI host alongside Vault Demo, using the application-owned supervisor and
 standard PocketDeploy stop-first delivery. No custom host dispatcher is installed.
 
@@ -104,7 +104,7 @@ not proof of a completed Google sign-in.
 
 The operator confirmed the operator/contact details and quotas. Vault Demo remained
 healthy on its existing revision. Publication and CD are enabled and deployment is
-unpaused through the repository-specific `pocketdeploy-v1` GitHub environment.
+unpaused through the repository-specific `pocketdeploy-v2` GitHub environment.
 The profile reconciled to configured `latest` without replacing the running image;
 the next source push exercises the complete publication and restricted CD path.
 

@@ -39,7 +39,7 @@ Pull requests and other branches validate but cannot publish or deploy.
 
 `demo_deploy` runs after `demo_manifest` only when
 `WIKICONTEXT_DEMO_DEPLOY_ENABLED=true` and `WIKICONTEXT_DEMO_DEPLOY_PAUSED` is not
-`true`. It uses the GitHub environment `pocketdeploy-v1`, restricted to `main`,
+`true`. It uses the GitHub environment `pocketdeploy-v2`, restricted to `main`,
 with `SERVER_IP`, the configured operator `SERVER_USER`, verified
 `SSH_KNOWN_HOSTS` and repository-specific restricted `SSH_PRIVATE_KEY`.
 Workflow and deployment concurrency never cancel an active release.
