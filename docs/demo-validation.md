@@ -5,7 +5,8 @@ The checks below retain their original synthetic scope. Current live evidence is
 recorded in [DEPLOYMENT.md](../DEPLOYMENT.md). The initial package commit is
 `ca78b763de03f25c0f9b8bb8fb232cb3657b0020`; the portable launcher uses that
 dedicated repository and full revision. Publication and restricted CD are now
-enabled through the main-only `pocketdeploy-v1` environment.
+enabled through the main-only `pocketdeploy-v2` environment (`pocketdeploy-v1`
+until that host was retired on 24 October 2026).
 
 ## Earlier local checks
 

@@ -7,11 +7,11 @@ upstream remote is named `upstream-local`. The client command and skill remain
 `wikicontext`; repository ownership does not rename the user interface.
 
 The demo has independent CI, image publication (`ghcr.io/pocketcontext/wikicontext-demo`)
-and deployment controls (GitHub environment `pocketdeploy-v1`, restricted to
+and deployment controls (GitHub environment `pocketdeploy-v2`, restricted to
 `main`; a repository-specific forced-command key triggers standard reconciliation). The skill installs from
 `https://github.com/pocketcontext/wikicontext-demo/tree/main/skills/wikicontext`.
 Core WikiContext production remains independently owned by `pocketcontext/wikicontext`
-and its `once-v2` deployment; this repository contains no path to it.
+and its own `pocketdeploy-v2` delivery; this repository contains no path to it.
 
 Demo-only additions: `pb_hooks/demo*.js`, `pb_migrations/1791600000_demo.js`,
 `deploy/demo/`, `docker/once_smoke.py`, the demo entrypoint modes, `legal/`, and
@@ -26,7 +26,7 @@ citation, authentication, client, entrypoint and storage fixes. Before each demo
 release, review upstream changes since the last reviewed commit, cherry-pick
 applicable fixes with their original reference (`git cherry-pick -x`), and record
 excluded changes and compatibility rationale in the release review. Never merge
-upstream production deployment configuration (workflows, `once-v2`
+upstream production deployment configuration (workflows, `COLORS_PROFILE`
 environment, `wiki.pocketcontext.com`, production buckets or image names), and
 never relax demo enrollment, daily reset, quota, audio or group-space restrictions
 as an incidental fix. `tests/deploy_workflow.py` rejects production references.

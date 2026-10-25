@@ -151,8 +151,8 @@ python3 docker/object_storage_smoke.py --image wikicontext:ci --minio-image wiki
 
 Releases use standard PocketDeploy trigger-only reconciliation described in
 [CI and deployment](ci-and-deployment.md); ONCE automatic updates and backups stay
-disabled. `deploy/install.py`, `deploy/deploy-wikicontext.py` and
-`deploy/bootstrap-wikicontext.py` are retired and refuse execution. Container
+disabled. The old-host `deploy/install.py`, `deploy/deploy-wikicontext.py` and
+`deploy/bootstrap-wikicontext.py` are removed. Container
 `init` initializes application storage only; it never provisions cloud resources.
 
 ## Runtime migration freeze

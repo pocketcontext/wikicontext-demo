@@ -70,8 +70,8 @@ No automatic rollback occurs; investigate durable state before retrying a failed
 upgrade. Main-revision checks reject stale reruns but do not lock Git refs;
 host-local locks are not distributed fencing; Litestream is asynchronous.
 
-Old `deploy/install.py`, `deploy/deploy-wikicontext.py` and
-`deploy/bootstrap-wikicontext.py` fail closed. New provisioning, storage, OAuth,
+The old-host `deploy/install.py`, `deploy/deploy-wikicontext.py` and
+`deploy/bootstrap-wikicontext.py` are removed. New provisioning, storage, OAuth,
 DNS and GitHub environment creation require separate explicit authorization.
 
 Validate after workflow changes:
