@@ -76,6 +76,8 @@ jobs:
         run: python3 wikicontext/tests/demo_website.py --binary pocketcontext/bin/pocketcontext
       - name: Test public demo admission, consent, quotas and generation fence
         run: python3 wikicontext/tests/demo_backend.py --binary pocketcontext/bin/pocketcontext
+      - name: Test demo snapshot reuse freshness and visitor isolation
+        run: python3 wikicontext/tests/demo_snapshot_freshness.py --binary pocketcontext/bin/pocketcontext
       - name: Test demo lifecycle with the pinned server
         env:
           WIKICONTEXT_DEMO_TEST_BINARY: ${{ github.workspace }}/pocketcontext/bin/pocketcontext

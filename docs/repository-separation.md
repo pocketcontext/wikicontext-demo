@@ -81,7 +81,7 @@ behavior remain fork-only. Passing demo validation does not validate core.
 Reviewed core WikiContext through `be8e301` and adopted the applicable server-pin,
 schema-reference and ingestion-concurrency changes from `c923e21`. The demo adds
 personal-space cache isolation coverage and an explicit predecessor compatibility
-declaration. PocketContext is pinned to `4b03d2905a34d9a606cb313e118d6874e74f0548`
+declaration. PocketContext was pinned to `4b03d2905a34d9a606cb313e118d6874e74f0548`
 (the exact authoritative value is in `POCKETCONTEXT_VERSION`).
 
 Production Company-space policy, populated production migrations, ONCE checkpoint
@@ -89,3 +89,25 @@ tools, production workflows and retention rules are excluded. Demo enrollment,
 personal-space defaults, quotas, audio restrictions, UTC reset and separately
 retained contacts remain unchanged. No portable-client behavior changed, so its
 existing published launcher pin remains; both copied-launcher modes are validated.
+
+## Server adoption review — 30 October 2026
+
+PocketContext advances from `4b03d2905a34d9a606cb313e118d6874e74f0548` to
+`416841c4d1225ddc464ce0b1e787a797d5b8d7e8` (v0.9.4, PocketBase v0.41.1), matching
+core WikiContext `08c366f`. Intervening server changes: `20843b7` snapshot indexes
+and opt-in `trackChanges`, `934a63a` opt-in background snapshots, `279b04b`
+PocketBase 0.40.4 to 0.41.1 (JS hook and migration API unchanged), and
+installer/release tooling. The demo keeps synchronous per-requester reuse and does
+not configure background snapshots, `trackChanges` or `maxConcurrentPerRequester`.
+
+Core `80236fd` (background snapshots with explicit fresh client reads, reader
+snapshot status and the matching schema reference) is excluded: synchronous reads
+already observe committed writes, so the demo needs no fresh-read client changes.
+Core `08c366f` is adopted as this pin; its production recovery document is not
+present here. New `tests/demo_snapshot_freshness.py` checks reuse, onboarding,
+read-after-write for pages, publication and private search, personal-space
+isolation, disablement, stale generation, restart and reset. The compatibility
+declaration adopts fingerprint
+`5f77899e86d44401301387604228fc3597489b19552c6f6a376c228dfcf4f067` and retains the
+previous `1e22002e…` (pin `4b03d29`) and older predecessors. Migrations, client and
+launcher pin are unchanged.

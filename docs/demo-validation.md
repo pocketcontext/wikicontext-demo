@@ -205,3 +205,14 @@ replacement; enabled CD will process the next source push.
 No real Google sign-in, live midnight reset observation or provider-backed
 populated recovery drill has yet been completed. These remain explicit acceptance
 checks rather than inferred successes from local or native CI tests.
+
+## Server 416841c (v0.9.4, PocketBase v0.41.1) — 30 October 2026
+
+Against a clean build of `416841c4d1225ddc464ce0b1e787a797d5b8d7e8`, every README
+backend/client command, the new `demo_snapshot_freshness` check, demo backend,
+fenced reset with the real server, `test_demo_*` lifecycle units (145, 15
+root/fixture skips), both copied-launcher skill modes, reader typecheck, 101 unit
+tests, build, the reader browser suite and 21 public-demo browser scenarios passed
+with synthetic isolated data on Linux (Node.js 26, pnpm 10.33.2, nginx 1.30).
+Container image, native privilege and Litestream-fixture runtime gates were left
+to CI.

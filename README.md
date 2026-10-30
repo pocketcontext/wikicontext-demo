@@ -220,6 +220,7 @@ Use synthetic isolated databases only. From this repository, with the pinned ser
 python3 tests/launcher.py
 python3 tests/integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/spaces.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/demo_snapshot_freshness.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/tracing.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/publication_review.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/home.py --binary /absolute/path/to/pinned/pocketcontext
@@ -280,7 +281,7 @@ records; this disposable demo starts empty and does not import a production wiki
 
 ## Infrastructure provenance
 
-Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. The compatible server revision is `4b03d2905a34d9a606cb313e118d6874e74f0548`, recorded in `POCKETCONTEXT_VERSION`.
+Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. The compatible server revision is `416841c4d1225ddc464ce0b1e787a797d5b8d7e8`, recorded in `POCKETCONTEXT_VERSION`.
 
 ## Request observability
 
